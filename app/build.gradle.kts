@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
 }
 
@@ -15,41 +16,50 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        
+        ndk {
+            // DJI SDK V5 requires 64-bit support
+            abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a"))
+        }
+    }
+
+    packaging {
+        resources {
+            pickFirsts.add("lib/*/libc++_shared.so")
+            pickFirsts.add("lib/*/libgnustl_shared.so")
+            excludes.add("META-INF/INDEX.LIST")
+        }
+        jniLibs {
+            // Mandatory for DJI SDK V5 native library loading
+            useLegacyPackaging = true
+            keepDebugSymbols.add("**/*.so")
+        }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
         }
+        debug {
+            isMinifyEnabled = false
+        }
     }
+    
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
+    }
+    kotlinOptions {
+        jvmTarget = "1.8"
+        freeCompilerArgs += listOf("-Xjvm-default=all")
     }
     buildFeatures {
         compose = true
-    }
-    packaging {
-        resources {
-            excludes += listOf(
-                "META-INF/rxjava.properties",
-                "META-INF/proguard/androidx-*.pro"
-            )
-        }
-        doNotStrip.addAll(listOf(
-            "*/armeabi-v7a/libdjivideo.so",
-            "*/arm64-v8a/libdjivideo.so",
-            "*/armeabi-v7a/libSDKRelativeJNI.so",
-            "*/arm64-v8a/libSDKRelativeJNI.so",
-            "*/armeabi-v7a/libFlyForbid.so",
-            "*/arm64-v8a/libFlyForbid.so",
-            "*/armeabi-v7a/libduml_vision_pencil.so",
-            "*/arm64-v8a/libduml_vision_pencil.so"
-        ))
+        buildConfig = true
     }
 }
 
@@ -62,6 +72,13 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    
+    // DJI SDK V5
+    implementation(libs.dji.sdk.v5.aircraft)
+    implementation(libs.dji.sdk.v5.network.support)
+    // Some DJI components are provided at runtime
+    compileOnly(libs.dji.sdk.v5.aircraft.provided)
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -69,9 +86,4 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
-
-    // DJI Mobile SDK V5
-    implementation("com.dji:dji-sdk-v5-aircraft:5.9.0")
-    compileOnly("com.dji:dji-sdk-v5-aircraft-provided:5.9.0")
-    runtimeOnly("com.dji:dji-sdk-v5-networkImp:5.9.0")
 }

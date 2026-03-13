@@ -21,8 +21,6 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.drones.ui.theme.DronesTheme
 import dji.v5.manager.SDKManager
-import dji.v5.manager.aircraft.product.ProductType
-import dji.v5.manager.datacenter.MediaDataCenter
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
@@ -33,25 +31,29 @@ class MainActivity : ComponentActivity() {
     private var isRecording = false
     private var lastOutputFile = ""
 
-    private val permissionsRequired = listOf(
+    private val permissionsRequired = mutableListOf(
         Manifest.permission.CAMERA,
         Manifest.permission.ACCESS_FINE_LOCATION,
-        Manifest.permission.WRITE_EXTERNAL_STORAGE,
-        Manifest.permission.READ_EXTERNAL_STORAGE,
-        Manifest.permission.BLUETOOTH_SCAN,
-        Manifest.permission.BLUETOOTH_CONNECT,
-    )
+        Manifest.permission.RECORD_AUDIO,
+    ).apply {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            add(Manifest.permission.BLUETOOTH_SCAN)
+            add(Manifest.permission.BLUETOOTH_CONNECT)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            add(Manifest.permission.READ_MEDIA_VIDEO)
+            add(Manifest.permission.READ_MEDIA_IMAGES)
+        } else {
+            add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            add(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+    }
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val allGranted = permissions.values.all { it }
         Log.d("MainActivity", "Permissions: $permissions")
-        if (allGranted) {
-            Log.d("MainActivity", "✓ All permissions granted")
-        } else {
-            Log.e("MainActivity", "✗ Some permissions denied")
-        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -84,18 +86,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startRecording() {
-        if (isRecording) {
-            Log.w("MainActivity", "Already recording")
-            return
-        }
+        if (isRecording) return
 
-        // Create output directory
         val outputDir = File(getExternalFilesDir(null), "DroneCaptures")
-        if (!outputDir.exists()) {
-            outputDir.mkdirs()
-        }
+        if (!outputDir.exists()) outputDir.mkdirs()
 
-        // Create timestamped filename
         val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
         val outputFile = File(outputDir, "drone_capture_$timestamp.mp4")
 
@@ -106,26 +101,22 @@ class MainActivity : ComponentActivity() {
             videoCapture?.start()
             isRecording = true
             lastOutputFile = outputFile.absolutePath
-            Log.d("MainActivity", "Recording started → $lastOutputFile")
+            Log.d("MainActivity", "Recording started")
         } catch (e: Exception) {
-            Log.e("MainActivity", "Failed to start recording: ${e.message}", e)
+            Log.e("MainActivity", "Failed to start: ${e.message}")
             isRecording = false
         }
     }
 
     private fun stopRecording() {
-        if (!isRecording) {
-            Log.w("MainActivity", "Not recording")
-            return
-        }
+        if (!isRecording) return
 
         try {
             videoCapture?.stop()
             muxer?.stop()
             isRecording = false
-            Log.d("MainActivity", "Recording stopped → $lastOutputFile")
         } catch (e: Exception) {
-            Log.e("MainActivity", "Failed to stop recording: ${e.message}", e)
+            Log.e("MainActivity", "Failed to stop: ${e.message}")
         }
     }
 }
@@ -137,109 +128,59 @@ fun RecorderScreen(
     isRecording: () -> Boolean,
     lastFile: () -> String
 ) {
-    var droneStatus by remember { mutableStateOf("Initializing MSDK...") }
-    var recordingState by remember { mutableStateOf(false) }
+    var droneStatus by remember { mutableStateOf("Initializing...") }
     var outputPath by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
-        // Monitor drone connection status
         val sdkManager = SDKManager.getInstance()
-        // Status updates via callbacks in DronesApplication
-        droneStatus = "Ready"
+        droneStatus = if (sdkManager.isRegistered) "Ready" else "Registering..."
     }
 
     Scaffold(
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
+        modifier = Modifier.fillMaxSize().statusBarsPadding()
     ) { innerPadding ->
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(24.dp),
+            modifier = Modifier.fillMaxSize().padding(innerPadding).padding(24.dp),
             verticalArrangement = Arrangement.SpaceEvenly,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Header
-            Text(
-                text = "DJI Video Capture",
-                fontSize = 28.sp,
-                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-            )
+            Text("DJI Video Capture", fontSize = 28.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
 
-            // Status Card
             Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
                 colors = CardDefaults.cardColors(containerColor = Color(0xFFF5F5F5))
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("System Status", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(8.dp))
                     Text("MSDK: $droneStatus", fontSize = 12.sp)
-                    Text(
-                        "Recording: ${if (isRecording()) "YES" else "NO"}",
-                        fontSize = 12.sp,
-                        color = if (isRecording()) Color.Red else Color.Green
-                    )
+                    Text("Recording: ${if (isRecording()) "YES" else "NO"}",
+                         fontSize = 12.sp, color = if (isRecording()) Color.Red else Color.Green)
                 }
             }
 
-            // Record Button
             Button(
                 onClick = {
                     if (isRecording()) {
                         onStop()
-                        recordingState = false
                         outputPath = lastFile()
                     } else {
                         onRecord()
-                        recordingState = true
                     }
                 },
-                modifier = Modifier
-                    .height(56.dp)
-                    .fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isRecording()) Color.Red else Color.Green
-                )
+                modifier = Modifier.height(56.dp).fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = if (isRecording()) Color.Red else Color.Green)
             ) {
-                Text(
-                    if (isRecording()) "STOP RECORDING" else "START RECORDING",
-                    fontSize = 16.sp,
-                    color = Color.White
-                )
+                Text(if (isRecording()) "STOP RECORDING" else "START RECORDING", color = Color.White)
             }
 
-            // Output File Display
             if (outputPath.isNotEmpty()) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF9E6))
-                ) {
+                Card(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text("Last Recording", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            outputPath,
-                            fontSize = 10.sp,
-                            fontFamily = FontFamily.Monospace,
-                            maxLines = 3
-                        )
+                        Text(outputPath, fontSize = 10.sp, maxLines = 3)
                     }
                 }
             }
-
-            // Info
-            Text(
-                "Connect RC-N3 controller via USB\nPower on drone before recording",
-                fontSize = 12.sp,
-                color = Color.Gray
-            )
         }
     }
 }

@@ -3,7 +3,8 @@
     "allow": [
       "WebSearch",
       "WebFetch(domain:developer.dji.com)",
-      "WebFetch(domain:medium.com)"
+      "WebFetch(domain:medium.com)",
+      "Bash(./gradlew build:*)"
     ]
   }
 }

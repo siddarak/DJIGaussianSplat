@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <usb-accessory model="DJI RC-N3" manufacturer="DJI" />
+    <usb-accessory model="DJI RC-N2" manufacturer="DJI" />
+    <usb-accessory model="DJI RC-N1" manufacturer="DJI" />
+    <usb-accessory model="DJI Smart Controller" manufacturer="DJI" />
+    <usb-accessory model="DJI RC Pro" manufacturer="DJI" />
+    <usb-accessory model="DJI RC" manufacturer="DJI" />
+    <usb-accessory model="DJI RC 2" manufacturer="DJI" />
+</resources>
