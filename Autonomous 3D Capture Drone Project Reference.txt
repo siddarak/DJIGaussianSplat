@@ -1,0 +1,574 @@
+================================================================================
+        AUTONOMOUS 3D CAPTURE DRONE SYSTEM - COMPLETE PROJECT REFERENCE
+================================================================================
+
+Hard (Siddhesh Darak)
+Cornell University - Graduate Research
+Last Updated: March 2026
+
+Hardware: DJI Mini 4 Pro | RC-N3 Controller | Android MSDK V5
+Development Laptop: "antigravity"
+
+================================================================================
+1. THE VISION
+================================================================================
+
+Build an end-to-end autonomous drone system for one-click 3D Gaussian splat
+reconstruction. The user places an object, the drone autonomously captures it
+from all angles, and a pipeline outputs a polished 3D model. No manual flying.
+No manual photogrammetry. Press a button, get a 3D model.
+
+COMPLETE PIPELINE:
+  1. User places object on surface
+  2. Drone takes off and flies over object to measure height (ToF/VPS differential altimetry)
+  3. Indoor positioning system tracks drone location in real-time (no GPS)
+  4. Drone executes multi-altitude dome capture pattern around object
+  5. Real-time object recognition identifies and tracks target
+  6. Gaussian splatting pipeline generates 3D reconstruction
+  7. User receives polished 3D model
+
+PROJECT STATUS OVERVIEW:
+
+  Component                              Status        Notes
+  ------------------------------------   -----------   ------------------------------------
+  Orbital flight patterns (KMZ gen)      BUILT         Python, 58-waypoint dome, 4 alt levels
+  WPML reverse-engineering               BUILT         DJI waypoint format decoded, KMZ working
+  SD card mission deployment             BUILT         Bypass RC 2 limits via drone SD card
+  Outdoor GPS flight test                READY         Coords: 40.754972, -73.956167
+  Indoor positioning system              R&D           Evaluating Marvelmind, ArUco, UWB, SLAM
+  MSDK V5 Android app                    IN PROGRESS   Env setup on antigravity laptop
+  Object height measurement              CONCEPT       ToF differential altimetry validated theoretically
+  Object recognition                     PLANNED       Real-time target identification
+  Gaussian splat generation              PLANNED       Cornell research with professor
+  User application                       PLANNED       Seamless end-to-end interface
+
+
+================================================================================
+2. HARDWARE SETUP & EVOLUTION
+================================================================================
+
+2.1 CURRENT HARDWARE
+--------------------
+  Drone:              DJI Mini 4 Pro
+  Controller:         RC-N3 (acquired Feb 2026)
+  Development Device: Android phone (borrowed, needs Android 8.0+)
+  Development Laptop: "antigravity"
+  SDK:                DJI Mobile SDK V5
+
+2.2 CONTROLLER EVOLUTION
+------------------------
+The project went through three controller stages, each unlocking new capabilities:
+
+  RC 2 (original):
+    Capabilities: DJI Fly app, basic waypoints, SD card file transfer workaround
+    Limitations:  Locked-down Android, no MSDK, no ADB, no third-party apps
+
+  RC-N2 (researched):
+    Capabilities: MSDK app support, Virtual Stick API, phone-based development,
+                  third-party apps (Litchi, Dronelink)
+    Limitations:  Still requires custom app for indoor flight
+
+  RC-N3 (current):
+    Capabilities: Full MSDK V5 support, real-time waypoint missions, flight
+                  telemetry access, programmatic gimbal control, USB to Android
+    Limitations:  Requires separate Android device
+
+Key insight: The RC 2 was designed for casual users. The RC-N3 unlocks everything
+needed for autonomous development.
+
+2.3 DRONE SENSOR ARRAY
+-----------------------
+The DJI Mini 4 Pro has extensive sensors, but accessibility varies:
+
+  - Main gimbal camera: ACCESSIBLE via MSDK, used for capture AND potentially navigation
+  - Downward binocular vision cameras: FIRMWARE-LOCKED, NOT accessible via MSDK
+  - Fisheye cameras: FIRMWARE-LOCKED, NOT accessible via MSDK
+  - 3D Infrared Time-of-Flight (ToF) sensor: Used internally for VPS, not directly accessible
+  - Auxiliary bottom lighting: Automatic, not controllable
+
+  >>> CRITICAL LIMITATION: Only the main gimbal camera feed is accessible through
+  >>> Mobile SDK. All VPS cameras are firmware-locked.
+
+
+================================================================================
+3. WHAT WAS BUILT: PYTHON WAYPOINT MISSION GENERATOR
+================================================================================
+
+3.1 WPML REVERSE ENGINEERING
+-----------------------------
+DJI's waypoint missions use the WPML format, which is essentially a KMZ file
+(ZIP archive) containing XML files. This format was reverse-engineered from DJI's
+Cloud API documentation and practical experimentation.
+
+WPML File Structure:
+  - KMZ file (ZIP format) containing template.kml and waylines.wpml
+  - template.kml defines mission metadata, drone model, payload settings
+  - waylines.wpml contains the actual waypoint coordinates and actions
+  - Supports waypoint types: fly-to-point, curved flight, hover
+  - Actions at waypoints: take photo, start/stop recording, gimbal rotation
+
+3.2 DOME CAPTURE PATTERN
+-------------------------
+The Python generator creates multi-altitude orbital dome capture patterns
+optimized for 3D reconstruction:
+
+  Parameter          Value                        Purpose
+  ----------------   --------------------------   -------------------------
+  Total waypoints    58                           Full dome coverage
+  Altitude levels    4 (0.9m, 1.7m, 2.7m, 3.3m)  Multi-elevation capture
+  Elevation bands    25°, 50°, 75°                Hemisphere coverage
+  Points per band    10, 8, 5 (lower = more)      Denser at lower angles
+  Dome radius        3.0m (adjustable)            Distance from object
+  Flight speed       <1 m/s precision             Smooth capture
+  POI tracking       360° continuous              Camera always faces object
+  Gimbal angles      -25°, -50°, -75°             Progressive downward tilt
+
+3.3 KEY TECHNICAL FEATURES
+--------------------------
+  - Continuous POI tracking: Drone heading always faces center object at every waypoint
+  - Smooth curved flight paths: Uses WPML curved turn mode for cinematographic quality
+  - Gimbal automation: Pitch calculated per waypoint based on elevation angle to object center
+  - Video recording automation: Start/stop recording embedded in waypoint actions
+  - GPS coordinate generation: Converts dome geometry into lat/lon via distance-bearing calcs
+  - Configurable parameters: Object height, dome radius, bands, points all adjustable
+
+3.4 SD CARD DEPLOYMENT WORKAROUND
+----------------------------------
+With the RC 2 controller (no MSDK access), a workaround was discovered:
+
+  1. Create a dummy waypoint mission in DJI Fly (requires outdoor GPS lock)
+  2. Access the drone's SD card via the RC 2 file manager
+  3. Navigate to the waypoint folder (random hex-named directories)
+  4. Replace the .kmz file with the custom-generated dome capture mission
+  5. Load mission in DJI Fly and execute
+
+  >>> This method was validated but has limitations: GPS waypoints don't work
+  >>> indoors, and the workaround is fragile.
+
+3.5 TEST COORDINATES
+--------------------
+  Location: 40°45'17.9"N 73°57'22.2"W
+  Decimal:  40.754972, -73.956167
+  Takeoff:  2m south of object center
+
+
+================================================================================
+4. INDOOR POSITIONING RESEARCH
+================================================================================
+
+GPS-based waypoint missions do NOT work indoors. This is a hard limit in DJI's
+MSDK - the WaypointMission class requires GPS lock to initialize. All indoor
+navigation must use the Virtual Stick API with an external positioning system.
+
+4.1 THE CORE PROBLEM
+---------------------
+The DJI Mini 4 Pro's Vision Positioning System (VPS) handles hover stability
+effectively - the drone can hold position indoors. However, VPS does NOT provide
+absolute room coordinates. It only maintains relative position from its current
+hover point. Over time, drift accumulates, affecting multi-orbit coverage patterns.
+
+  >>> FUNDAMENTAL CONFLICT: The main gimbal camera is the only camera accessible
+  >>> via MSDK. If you point it at positioning markers for navigation, you can't
+  >>> simultaneously point it at the object for capture.
+
+4.2 POSITIONING ALTERNATIVES EVALUATED
+---------------------------------------
+
+OPTION 1: MARVELMIND INDOOR GPS (RECOMMENDED)
+  - Ultrasonic beacon-based positioning, ±2cm accuracy
+  - Proven working with DJI Mini 4 Pro + RC-N2 setup
+  - Camera-independent — no conflict with capture gimbal
+  - Requires 4+ stationary beacons + 1 mobile beacon on drone
+  - Cost: $500-800 for starter kit + software license
+  - Android app streams position via UDP, controls drone via Virtual Stick
+
+OPTION 2: ARUCO MARKERS
+  - Printed fiducial markers detected via OpenCV
+  - Free to produce, well-documented library support
+  - Camera must see them — conflicts with gimbal pointing at subject
+  - Accuracy degrades beyond 3-4m, affected by lighting
+  - Possible interleaved workaround:
+    gimbal down (detect) → fly segment → gimbal to subject (capture) → repeat
+  - Works for still photos only, not continuous video
+
+OPTION 3: APRILTAGS
+  - Better-engineered alternative to ArUco
+  - Lower false detection rates, more robust at oblique angles
+  - Same fundamental camera conflict limitation
+
+OPTION 4: UWB (ULTRA-WIDEBAND) SYSTEMS (e.g., Pozyx)
+  - Camera-independent positioning
+  - Less precise than Marvelmind for this application
+  - Requires anchor infrastructure around the room
+
+OPTION 5: VISUAL SLAM ON MAIN CAMERA
+  - Free, no additional hardware needed
+  - Complex to implement, conflicts with capture (camera shared)
+  - Heavy computation — best offloaded to nearby laptop
+
+OPTION 6: CEILING-MOUNTED CAMERA TRACKING
+  - External camera(s) mounted above track the drone from outside
+  - Camera-independent on the drone side
+  - Leverages existing Python/CV skills
+  - Requires room infrastructure setup
+
+OPTION 7: COLORED/PATTERNED FLOOR MATS
+  - Large printed mat with unique gradient or pattern
+  - CV determines position by recognizing visible section
+  - Same camera conflict as marker-based approaches
+
+4.3 KEY TECHNICAL INSIGHT
+-------------------------
+For the orbital capture use case, camera-independent solutions (Marvelmind, UWB,
+ceiling cameras) are strongly preferred because they allow the gimbal to focus
+entirely on the capture subject while the drone navigates autonomously.
+
+
+================================================================================
+5. MSDK V5 DEVELOPMENT SETUP
+================================================================================
+
+5.1 ARCHITECTURE
+----------------
+With the RC-N3 controller, the system architecture is:
+
+  Android phone connects to RC-N3 via USB
+  → Custom Android app runs DJI Mobile SDK V5
+  → App sends Virtual Stick commands for indoor flight control
+  → App receives live video feed via VideoFeeder API
+  → External positioning data fed into app (Marvelmind/UWB/etc.)
+  → App manages gimbal orientation and camera capture
+
+5.2 MSDK INDOOR FLIGHT: VIRTUAL STICK API
+------------------------------------------
+Since WaypointMission requires GPS, all indoor flight uses Virtual Stick Control Mode:
+
+  - Send FlightControlData: pitch, roll, yaw, and vertical throttle
+  - Implement closed-loop feedback using external position data
+  - PID controller needed to handle latency in the control chain
+  - Control chain latency: Drone → Remote → Phone → Server → Phone → Remote → Drone
+
+5.3 VIDEO STREAMING FOR EXTERNAL PROCESSING
+--------------------------------------------
+MSDK provides access to the live video stream via the VideoFeeder API:
+
+  - Raw YUV or H.264 frames accessible on the Android device
+  - Can stream via TCP/UDP/WebRTC to external compute (laptop/server)
+  - For lightweight drones like Mini 4 Pro, heavy processing (SLAM, object
+    detection) is better offloaded to nearby laptop
+  - Local processing possible with OpenCV/TFLite for low-latency tasks
+
+5.4 DEVELOPMENT ENVIRONMENT (IN PROGRESS)
+------------------------------------------
+  Laptop:       "antigravity"
+  IDE:          Android Studio
+  JDK:          JDK 11+
+  Android SDK:  API Level 31+ (for MSDK V5)
+  MSDK Version: DJI Mobile SDK V5 (Android-only)
+  Test Device:  Android phone with Android 8.0+ (10+ recommended)
+
+Gradle Dependencies (MSDK V5):
+  - DJI aircraft SDK V5 package
+  - Kotlin/Java support
+  - USB Host mode for controller connection
+
+Setup Steps Completed/In Progress:
+  1. Android Studio installation on antigravity
+  2. SDK Manager configuration (API 31+)
+  3. JDK setup and verification
+  4. DJI Developer Account registration + App Key
+  5. USB debugging enabled on test Android device
+  6. MSDK V5 Gradle dependency integration (NEXT)
+  7. Project structure and MSDK initialization code (NEXT)
+
+
+================================================================================
+6. OBJECT HEIGHT MEASUREMENT CONCEPT
+================================================================================
+
+Before executing the dome capture pattern, the drone needs to know the object's
+height to calculate optimal orbit altitudes and gimbal angles.
+
+6.1 DIFFERENTIAL ALTIMETRY APPROACH
+------------------------------------
+  1. Drone hovers over the floor next to the object → measures distance to floor (h_floor)
+  2. Drone moves over the object → measures distance to object top (h_object)
+  3. Object height = h_floor - h_object (at same drone altitude)
+
+  ToF Formula:      h = c·t/2 (speed of light × photon round-trip time / 2)
+  Target Accuracy:  Sub-decimeter in GPS-denied environments
+
+6.2 FEASIBILITY ASSESSMENT
+---------------------------
+  - VPS sensors perform these calculations internally for hover stability
+  - RC 2 doesn't expose raw sensor data; MSDK with RC-N3 may provide altitude readings
+  - Practical workaround: Use displayed altitude readings for manual-assisted measurement
+  - Concept is sound for single-altitude orbits at close range
+  - Multi-altitude missions need position correction to counter VPS drift over time
+
+
+================================================================================
+7. MSDK TECHNICAL ANALYSIS (FROM RIIS LLC RESEARCH)
+================================================================================
+
+Based on analysis of RIIS LLC's deep dives into DJI Mobile SDK, these are the
+key findings for indoor autonomous flight:
+
+7.1 THREE CORE QUESTIONS ANSWERED
+----------------------------------
+
+Q1: Is vision-based positioning reliable for indoor flight paths?
+  - VPS is stable for hovering and short-distance maneuvers
+  - Drift is inevitable over long paths — no true indoor GPS
+  - Closed-loop feedback system required using video feed or external sensors
+  - Virtual Stick Control Mode provides FlightControlData (pitch, roll, yaw, throttle)
+
+Q2: Can camera feed stream to external compute in real-time?
+  - Yes — core MSDK capability via VideoFeeder API
+  - Socket streaming (TCP/UDP/WebRTC) from mobile app to external server
+  - For lighter drones, offload heavy computation (SLAM, detection) to nearby laptop
+  - On-device processing possible with OpenCV or TFLite for low-latency needs
+
+Q3: Hard limitations for indoor autonomous navigation?
+  - NO WAYPOINT MISSIONS INDOORS: WaypointMission class requires GPS lock — hard
+    limit. Must use Virtual Stick API exclusively.
+  - NETWORK LATENCY: Full round-trip chain (drone→remote→phone→server→back) causes
+    oscillations. PID tuning critical.
+  - MSDK V4 vs V5 INCOMPATIBILITY: V5 has completely different architecture. V5 is
+    Android-only with different streaming APIs. Must match SDK version to hardware.
+
+
+================================================================================
+8. DRIFT & POSITION CORRECTION STRATEGIES
+================================================================================
+
+VPS drift accumulation is a key challenge for multi-orbit dome capture missions.
+Several strategies were discussed:
+
+  - Return to a known position between altitude layers to reset drift reference
+  - Use visual markers on the ground for continuous position correction
+  - Accept some imperfection and rely on photogrammetry software (Meshroom,
+    RealityCapture) to handle slight overlap inconsistencies — these tools are
+    surprisingly forgiving
+  - For single-altitude orbits at close range, drift is minimal and acceptable
+  - For full dome coverage (multiple altitudes), active correction becomes important
+  - Marvelmind or UWB provides continuous absolute position feedback independent of drift
+
+
+================================================================================
+9. RESEARCH CONTEXT & PROFESSIONAL OUTREACH
+================================================================================
+
+9.1 CORNELL RESEARCH
+---------------------
+Working with a professor at Cornell on autonomous drone systems research,
+specifically focused on creating a Gaussian splatting pipeline for 3D
+reconstruction using autonomous drone image capture. The research involves
+mapping real-time drone captures against architectural CAD models to eliminate
+positioning drift in GPS-denied environments.
+
+9.2 BACKGROUND & EXPERIENCE
+----------------------------
+  - President of university's Unmanned Aerial Systems (UAS) Group during undergrad
+  - Built competition drones and competed in multiple events
+  - Hands-on experience with drone hardware: Pixhawk flight controllers, PX4,
+    ArduPilot, Betaflight
+  - Drone software protocols: MAVSDK, MAVLink, QGroundControl, Mission Planner, DroneKit
+  - Computer vision: YOLOv8, YOLOv5s, OpenCV, pose estimation, object detection
+  - Related projects:
+      * Human Anomaly Detection System (YOLOv8 + MobilLSTM, 90%/97% accuracy)
+      * Automated Tree Counting for Agriculture using UAVs (YOLOv5s, 95% accuracy
+        across 500+ farmland)
+  - Publication: "American Sign Language Recognition and Detection: A Review" — ICIVC (2023)
+
+9.3 THESEUS OUTREACH (DEFENSE TECH)
+------------------------------------
+Crafted cold outreach email to Theseus (YC S24 defense tech startup) building
+GPS-denied navigation for drones using visual odometry + satellite map matching.
+Strong technical overlap with this project's indoor positioning challenges.
+
+  Contacts:  Ian (ian@theseus.us), Sacha (sacha@theseus.us)
+  Key angle: Cornell research on Gaussian splatting + positioning systems +
+             drone hardware experience
+  Resume:    Restructured to emphasize drone systems, GPS-denied navigation,
+             positioning research, open-source drone ecosystem (MAVLink, PX4,
+             ArduPilot, QGC)
+
+Final email approach:
+  - Opens with genuine interest in their GPS-denied navigation work
+  - Mentions Cornell Gaussian splatting research with professor
+  - Highlights positioning systems explored (ArUco, UWB, SLAM)
+  - References mapping captures against architectural CAD models
+  - Asks for brief chat to learn about their priorities
+  - Tone: authentic, specific, not overly bold
+
+9.4 DJI DEVELOPER EXPERT OUTREACH
+----------------------------------
+Drafted email to a DJI MSDK expert found via RIIS LLC YouTube content, seeking
+validation of whether MSDK can support indoor autonomous flight requirements
+with the Mini 4 Pro + RC-N3 setup.
+
+
+================================================================================
+10. RESUME DESCRIPTIONS (STAR FORMAT)
+================================================================================
+
+10.1 FULL STAR DESCRIPTION
+---------------------------
+SITUATION: Consumer drones lack integrated solutions for automated 3D object
+scanning, requiring manual flight and separate photogrammetry workflows. Indoor
+environments present additional challenges due to GPS unavailability.
+
+TASK: Design and develop an end-to-end autonomous drone system that captures
+objects from multiple angles indoors and generates 3D reconstructions (Gaussian
+splats) with minimal user intervention.
+
+ACTION: Reverse-engineered DJI's WPML waypoint format to build a Python-based
+orbital flight path generator producing smooth, multi-altitude dome capture
+patterns. Developed gimbal control algorithms ensuring continuous POI tracking
+across varying elevations (0°-75°) and distances. Implemented SD card-based
+mission deployment workflow bypassing RC 2 controller limitations. Researching
+SLAM-based indoor positioning to enable GPS-free autonomous navigation via MSDK.
+Architecting real-time video pipeline for onboard/offboard object recognition
+integration.
+
+RESULT: Working prototype generates optimized flight missions for DJI Mini 4 Pro
+capturing 58-point orbital video sequences. System designed to scale into full
+autonomous 3D scanning product.
+
+10.2 DENSE 2-LINE VERSION
+--------------------------
+Developing end-to-end autonomous drone system for one-click 3D Gaussian splat
+reconstruction—user places object, drone captures, pipeline outputs model. Built
+Python-based orbital flight generator reverse-engineering DJI's WPML format:
+58-waypoint dome patterns across 4 altitude levels (0.9m-3.3m), 360° continuous
+POI tracking, <1m/s precision flight. Implementing SLAM-based indoor positioning
+for GPS-free navigation, MSDK real-time flight control, and onboard object
+recognition for fully autonomous capture pipeline.
+
+Technologies: Python, DJI WPML/KMZ, MSDK, SLAM, OpenCV, Gaussian Splatting
+
+
+================================================================================
+11. COMPLETE TECHNICAL SKILLS REFERENCE
+================================================================================
+
+  Drone Hardware & Firmware:
+    Pixhawk flight controllers, PX4, ArduPilot, Betaflight, DJI Mobile SDK
+    (MSDK V5), WPML format, Hardware integration, Custom drone builds
+
+  Drone Software & Protocols:
+    MAVSDK, MAVLink protocol, QGroundControl (QGC), Mission Planner, DroneKit,
+    Autonomous waypoint missions, Visual Positioning Systems (VPS)
+
+  Positioning & Navigation:
+    GPS-denied navigation, ArUco markers, UWB positioning, Visual SLAM, Sensor
+    fusion, IMU integration, Real-time localization, Marvelmind beacons
+
+  Computer Vision & ML:
+    YOLOv8, YOLOv5s, PyTorch, TensorFlow, OpenCV, Object detection, Pose
+    estimation, 3D reconstruction, Gaussian Splatting
+
+  Languages:
+    Python, C++, JavaScript
+
+  ML/AI Frameworks:
+    PyTorch, TensorFlow, scikit-learn, Keras, JAX, RNNs, Transformers
+
+  Data & Statistics:
+    NumPy, Pandas, Matplotlib, Seaborn, SciPy, Jupyter
+
+  DevOps & MLOps:
+    Docker, Kubernetes, Kubeflow, MLflow, Terraform, Jenkins, AWS EMR, CI/CD
+
+  Databases:
+    MySQL, PostgreSQL
+
+
+================================================================================
+12. NEXT STEPS & ROADMAP
+================================================================================
+
+12.1 IMMEDIATE (Environment Setup)
+  - Complete Android Studio setup on antigravity laptop
+  - Configure MSDK V5 Gradle dependencies
+  - Register DJI Developer Account and obtain App Key
+  - Build and deploy DJI Sample App to test device
+  - Verify RC-N3 → Android device → MSDK connection
+
+12.2 SHORT-TERM (MSDK App Development)
+  - Build custom Android app with Virtual Stick control
+  - Implement live video feed access via VideoFeeder
+  - Test basic indoor flight control (hover, move, rotate)
+  - Validate indoor flight feasibility without GPS
+  - Test gimbal programmatic control for POI tracking
+
+12.3 MEDIUM-TERM (Indoor Positioning Integration)
+  - Select and procure positioning system (Marvelmind recommended, or build
+    ArUco/SLAM solution)
+  - Integrate position data feed into MSDK app
+  - Implement closed-loop position control with PID tuning
+  - Test single-altitude indoor orbit around object
+  - Implement object height measurement via altitude differential
+
+12.4 LONG-TERM (Full Pipeline)
+  - Multi-altitude dome capture missions indoors
+  - Real-time object recognition and tracking
+  - Gaussian splatting pipeline integration
+  - End-to-end user application (place object → get 3D model)
+  - Drift correction and mission optimization
+  - Position correction strategies for extended operations
+
+12.5 PROFESSIONAL DEVELOPMENT
+  - Follow up with Theseus (defense tech) if outreach email sent
+  - Connect with DJI MSDK expert for technical validation
+  - Continue Cornell research collaboration on Gaussian splatting
+  - Explore additional defense/drone industry networking opportunities
+
+
+================================================================================
+13. KEY LEARNINGS & TECHNICAL DECISIONS LOG
+================================================================================
+
+  - DJI's VPS handles hover stability but does NOT provide absolute room
+    coordinates needed for autonomous navigation
+  - VPS drift accumulates over time, affecting multi-orbit coverage — shorter
+    missions are more reliable
+  - Only the main gimbal camera is accessible via MSDK — VPS cameras are
+    firmware-locked
+  - GPS-based waypoint missions (WaypointMission class) will NOT work indoors —
+    hard limit
+  - Virtual Stick API is the only path for indoor autonomous control
+  - Camera conflict: navigation markers vs. capture subject — camera-independent
+    positioning is preferred
+  - MSDK V4 and V5 are architecturally incompatible — V5 is Android-only
+  - RC 2 is locked down but SD card file replacement provides limited workaround
+  - RC-N3 with phone-based development unlocks full MSDK capabilities
+  - PID controller tuning is critical due to latency in the
+    drone→controller→phone→server control chain
+  - Photogrammetry software (Meshroom, RealityCapture) is forgiving of slight
+    position errors
+  - Marvelmind has proven integration with Mini 4 Pro + RC-N2/N3 — most
+    battle-tested path
+  - ToF differential altimetry concept is sound but sensor data access depends
+    on MSDK exposure
+  - DJI Mini 4 Pro was only added to MSDK in March 2025 — documentation may
+    be limited
+
+
+================================================================================
+14. IMPORTANT LINKS & RESOURCES
+================================================================================
+
+  DJI Developer Portal:     https://developer.dji.com
+  DJI Mobile SDK V5:        https://developer.dji.com/mobile-sdk/
+  DJI WPML Reference:       https://developer.dji.com/doc/cloud-api-tutorial/en/api-reference/dji-wpml/template-kml.html
+  RIIS LLC (MSDK tutorials): YouTube channel with DJI SDK deep dives
+  Marvelmind:               https://marvelmind.com (Indoor positioning system)
+  Theseus:                  https://theseus.us (GPS-denied navigation, YC S24)
+  OpenMTP:                  https://openmtp.ganeshrvel.com (Android file transfer for Mac)
+  Dronelink / Litchi:       Third-party apps for DJI drone control (orbit/dome features)
+
+================================================================================
+                              END OF DOCUMENT
+================================================================================
