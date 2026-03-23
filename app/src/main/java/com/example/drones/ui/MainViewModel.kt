@@ -9,6 +9,8 @@ import com.example.drones.data.DroneState
 import com.example.drones.data.SdkConnectionState
 import com.example.drones.recording.RecordingManager
 import com.example.drones.sdk.DjiSdkManager
+import com.example.drones.sdk.FlightController
+import com.example.drones.sdk.GimbalController
 import com.example.drones.sdk.TelemetryManager
 import com.example.drones.sdk.TelemetryUpdate
 import kotlinx.coroutines.Job
@@ -23,6 +25,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
         private const val TAG = "MainViewModel"
+        private const val FLIGHT_ERROR_CLEAR_MS = 4000L
     }
 
     private val _droneState = MutableStateFlow(DroneState())
@@ -31,21 +34,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var telemetryManager: TelemetryManager? = null
     private val recordingManager = RecordingManager(application)
     private var recordingTimerJob: Job? = null
+    private var errorClearJob: Job? = null
 
     init {
         observeSdkState()
         setupRecordingCallbacks()
     }
 
+    // --- SDK state observation ---
+
     private fun observeSdkState() {
         viewModelScope.launch {
-            DjiSdkManager.connectionState.collect { state ->
+            DjiSdkManager.connectionState.collect { sdkState ->
                 _droneState.update { it.copy(
-                    sdkRegistered = state == SdkConnectionState.REGISTERED
-                            || state == SdkConnectionState.PRODUCT_CONNECTED,
-                    errorMessage = if (state == SdkConnectionState.ERROR) {
-                        DjiSdkManager.errorMessage.value
-                    } else null
+                    sdkRegistered = sdkState == SdkConnectionState.REGISTERED
+                            || sdkState == SdkConnectionState.PRODUCT_CONNECTED,
+                    errorMessage = if (sdkState == SdkConnectionState.ERROR)
+                        DjiSdkManager.errorMessage.value else null
                 )}
             }
         }
@@ -56,10 +61,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     startTelemetry()
                 } else {
                     stopTelemetry()
-                    // Safety: stop recording if drone disconnects
-                    if (recordingManager.isRecording) {
-                        stopRecording()
-                    }
+                    if (recordingManager.isRecording) stopRecording()
+                    // Reset flight action states on disconnect
+                    _droneState.update { it.copy(
+                        isTakingOff = false,
+                        isLanding = false,
+                        isRth = false,
+                        isLandingConfirmationRequired = false,
+                        gimbalLocked = false
+                    )}
                 }
             }
         }
@@ -69,70 +79,167 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun startTelemetry() {
         if (telemetryManager != null) return
-        Log.i(TAG, "Starting telemetry manager")
-        telemetryManager = TelemetryManager { update ->
-            handleTelemetryUpdate(update)
-        }
+        telemetryManager = TelemetryManager { update -> handleTelemetryUpdate(update) }
         telemetryManager?.startListening()
+        Log.i(TAG, "Telemetry started")
     }
 
     private fun stopTelemetry() {
-        Log.i(TAG, "Stopping telemetry manager")
         telemetryManager?.stopListening()
         telemetryManager = null
         _droneState.update { it.copy(
-            altitude = 0.0,
-            latitude = 0.0,
-            longitude = 0.0,
-            speedHorizontal = 0.0,
-            speedVertical = 0.0,
-            heading = 0.0,
-            satelliteCount = 0,
-            isFlying = false,
-            flightMode = "N/A",
-            batteryPercent = 0,
-            batteryTemperature = 0.0,
-            signalQuality = 0,
-            gimbalPitch = 0.0,
-            gimbalYaw = 0.0,
-            gimbalRoll = 0.0,
-            lowBatteryWarning = false,
-            criticalBatteryWarning = false,
+            altitude = 0.0, latitude = 0.0, longitude = 0.0,
+            speedHorizontal = 0.0, speedVertical = 0.0, heading = 0.0,
+            satelliteCount = 0, isFlying = false, flightMode = "N/A",
+            batteryPercent = 0, batteryTemperature = 0.0, signalQuality = 0,
+            gimbalPitch = 0.0, gimbalYaw = 0.0, gimbalRoll = 0.0,
+            lowBatteryWarning = false, criticalBatteryWarning = false
         )}
+        Log.i(TAG, "Telemetry stopped")
     }
 
     private fun handleTelemetryUpdate(update: TelemetryUpdate) {
         _droneState.update { current ->
             when (update) {
-                is TelemetryUpdate.Altitude -> current.copy(altitude = update.meters)
-                is TelemetryUpdate.Location -> current.copy(
+                is TelemetryUpdate.Altitude      -> current.copy(altitude = update.meters)
+                is TelemetryUpdate.Location      -> current.copy(
                     latitude = update.latitude,
                     longitude = update.longitude,
                     altitude = update.altitude
                 )
-                is TelemetryUpdate.Velocity -> current.copy(
+                is TelemetryUpdate.Velocity      -> current.copy(
                     speedHorizontal = update.horizontal,
                     speedVertical = update.vertical
                 )
-                is TelemetryUpdate.Heading -> current.copy(heading = update.degrees)
-                is TelemetryUpdate.FlyingState -> current.copy(isFlying = update.isFlying)
-                is TelemetryUpdate.FlightModeUpdate -> current.copy(flightMode = update.mode)
-                is TelemetryUpdate.Satellites -> current.copy(satelliteCount = update.count)
-                is TelemetryUpdate.Battery -> current.copy(
+                is TelemetryUpdate.Heading       -> current.copy(heading = update.degrees)
+                is TelemetryUpdate.FlyingState   -> current.copy(
+                    isFlying = update.isFlying,
+                    // Clear takeoff/landing pending states once we know airborne status
+                    isTakingOff = if (update.isFlying) false else current.isTakingOff,
+                    isLanding   = if (!update.isFlying) false else current.isLanding
+                )
+                is TelemetryUpdate.FlightModeUpdate -> current.copy(
+                    flightMode = update.mode,
+                    isRth = update.mode.contains("GO_HOME", ignoreCase = true)
+                )
+                is TelemetryUpdate.Satellites    -> current.copy(satelliteCount = update.count)
+                is TelemetryUpdate.Battery       -> current.copy(
                     batteryPercent = update.percent,
                     lowBatteryWarning = update.lowWarning,
                     criticalBatteryWarning = update.criticalWarning
                 )
-                is TelemetryUpdate.BatteryTemp -> current.copy(batteryTemperature = update.celsius)
+                is TelemetryUpdate.BatteryTemp   -> current.copy(batteryTemperature = update.celsius)
                 is TelemetryUpdate.GimbalAttitude -> current.copy(
                     gimbalPitch = update.pitch,
                     gimbalYaw = update.yaw,
                     gimbalRoll = update.roll
                 )
-                is TelemetryUpdate.Signal -> current.copy(
+                is TelemetryUpdate.Signal        -> current.copy(
                     signalQuality = update.quality,
                     signalLost = update.quality < 10 && current.productConnected
                 )
+            }
+        }
+    }
+
+    // --- Flight controls ---
+
+    fun takeOff() {
+        _droneState.update { it.copy(isTakingOff = true, flightActionError = null) }
+        FlightController.takeOff { success, error ->
+            _droneState.update { it.copy(
+                isTakingOff = if (!success) false else it.isTakingOff,
+                flightActionError = if (!success) "Takeoff failed: $error" else null
+            )}
+            if (!success) scheduleErrorClear()
+        }
+    }
+
+    fun land() {
+        _droneState.update { it.copy(isLanding = true, flightActionError = null) }
+        FlightController.land { success, error ->
+            _droneState.update { it.copy(
+                isLanding = if (!success) false else it.isLanding,
+                flightActionError = if (!success) "Land failed: $error" else null
+            )}
+            if (!success) scheduleErrorClear()
+        }
+    }
+
+    fun returnToHome() {
+        _droneState.update { it.copy(isRth = true, flightActionError = null) }
+        FlightController.returnToHome { success, error ->
+            _droneState.update { it.copy(
+                isRth = if (!success) false else it.isRth,
+                flightActionError = if (!success) "RTH failed: $error" else null
+            )}
+            if (!success) scheduleErrorClear()
+        }
+    }
+
+    fun cancelRth() {
+        FlightController.cancelReturnToHome { success, error ->
+            _droneState.update { it.copy(
+                isRth = if (success) false else it.isRth,
+                flightActionError = if (!success) "Cancel RTH failed: $error" else null
+            )}
+            if (!success) scheduleErrorClear()
+        }
+    }
+
+    fun confirmLanding() {
+        FlightController.confirmLanding { success, error ->
+            if (!success) {
+                _droneState.update { it.copy(flightActionError = "Confirm land failed: $error") }
+                scheduleErrorClear()
+            }
+        }
+    }
+
+    fun emergencyStop() {
+        FlightController.emergencyStop { success, error ->
+            if (!success) {
+                _droneState.update { it.copy(flightActionError = "Emergency stop failed: $error") }
+                scheduleErrorClear()
+            }
+        }
+    }
+
+    // --- Gimbal ---
+
+    fun lockGimbal() {
+        val currentPitch = _droneState.value.gimbalPitch
+        GimbalController.lockAtCurrentAngle(currentPitch) { success, error ->
+            if (success) {
+                _droneState.update { it.copy(gimbalLocked = true, gimbalLockAngle = currentPitch) }
+            } else {
+                _droneState.update { it.copy(flightActionError = "Gimbal lock failed: $error") }
+                scheduleErrorClear()
+            }
+        }
+    }
+
+    fun unlockGimbal() {
+        // No SDK command needed — just stop enforcing the angle
+        _droneState.update { it.copy(gimbalLocked = false) }
+    }
+
+    fun setGimbalPitch(degrees: Double) {
+        GimbalController.setPitch(degrees) { success, error ->
+            if (!success) {
+                _droneState.update { it.copy(flightActionError = "Gimbal move failed: $error") }
+                scheduleErrorClear()
+            }
+        }
+    }
+
+    fun resetGimbal() {
+        GimbalController.resetToLevel { success, error ->
+            if (success) {
+                _droneState.update { it.copy(gimbalLocked = false) }
+            } else {
+                _droneState.update { it.copy(flightActionError = "Gimbal reset failed: $error") }
+                scheduleErrorClear()
             }
         }
     }
@@ -150,13 +257,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun startRecording() {
-        Log.i(TAG, "Starting both recordings")
         recordingManager.startBothRecording()
         startRecordingTimer()
     }
 
     fun stopRecording() {
-        Log.i(TAG, "Stopping both recordings")
         recordingManager.stopBothRecording()
         stopRecordingTimer()
         _droneState.update { it.copy(
@@ -165,17 +270,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )}
     }
 
-    fun getLastRecordingUri(): android.net.Uri? = recordingManager.lastRecordingUri
     fun getLastRecordingPath(): String = recordingManager.lastRecordingPath
+    fun getLastRecordingUri(): android.net.Uri? = recordingManager.lastRecordingUri
 
     private fun startRecordingTimer() {
         recordingTimerJob?.cancel()
         recordingTimerJob = viewModelScope.launch {
             var seconds = 0
             while (true) {
-                _droneState.update { it.copy(recordingTimeSeconds = seconds) }
+                _droneState.update { it.copy(recordingTimeSeconds = seconds++) }
                 delay(1000)
-                seconds++
             }
         }
     }
@@ -185,7 +289,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         recordingTimerJob = null
     }
 
-    // --- Object Selection (Layer 2 foundation) ---
+    // --- Object Selection ---
 
     fun toggleSelectionMode() {
         _droneState.update { it.copy(isSelectionMode = !it.isSelectionMode) }
@@ -199,11 +303,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _droneState.update { it.copy(selectedRegion = null, isSelectionMode = false) }
     }
 
+    // --- Helpers ---
+
+    /** Auto-dismiss flight action errors after a few seconds */
+    private fun scheduleErrorClear() {
+        errorClearJob?.cancel()
+        errorClearJob = viewModelScope.launch {
+            delay(FLIGHT_ERROR_CLEAR_MS)
+            _droneState.update { it.copy(flightActionError = null) }
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         stopTelemetry()
         recordingManager.cleanup()
         stopRecordingTimer()
-        Log.d(TAG, "ViewModel cleared")
+        errorClearJob?.cancel()
     }
 }

@@ -3,12 +3,12 @@ package com.example.drones.data
 import android.graphics.RectF
 
 data class DroneState(
-    // Connection
+    // --- Connection ---
     val sdkRegistered: Boolean = false,
     val productConnected: Boolean = false,
     val rcConnected: Boolean = false,
 
-    // Telemetry
+    // --- Telemetry ---
     val altitude: Double = 0.0,
     val latitude: Double = 0.0,
     val longitude: Double = 0.0,
@@ -19,37 +19,46 @@ data class DroneState(
     val isFlying: Boolean = false,
     val flightMode: String = "N/A",
 
-    // Battery
+    // --- Battery ---
     val batteryPercent: Int = 0,
     val batteryTemperature: Double = 0.0,
 
-    // Signal
+    // --- Signal ---
     val signalQuality: Int = 0,
 
-    // Gimbal
+    // --- Gimbal ---
     val gimbalPitch: Double = 0.0,
     val gimbalYaw: Double = 0.0,
     val gimbalRoll: Double = 0.0,
+    val gimbalLocked: Boolean = false,
+    val gimbalLockAngle: Double = 0.0,       // angle stored when lock was pressed
 
-    // Recording
+    // --- Flight Actions ---
+    val isTakingOff: Boolean = false,        // takeoff command sent, waiting for airborne
+    val isLanding: Boolean = false,          // landing command sent, descending
+    val isRth: Boolean = false,              // RTH active
+    val isLandingConfirmationRequired: Boolean = false,  // waiting for confirm-land
+
+    // --- Recording ---
     val isRecordingOnDevice: Boolean = false,
     val isRecordingOnDrone: Boolean = false,
     val recordingTimeSeconds: Int = 0,
     val onDeviceFilePath: String = "",
     val lastRecordingPath: String = "",
 
-    // Warnings
+    // --- Warnings ---
     val lowBatteryWarning: Boolean = false,
     val criticalBatteryWarning: Boolean = false,
     val isFailsafe: Boolean = false,
     val signalLost: Boolean = false,
 
-    // Object Selection (Layer 2 foundation)
+    // --- Object Selection (Layer 2 foundation) ---
     val selectedRegion: RectF? = null,
     val isSelectionMode: Boolean = false,
 
-    // Error
-    val errorMessage: String? = null
+    // --- Error ---
+    val errorMessage: String? = null,
+    val flightActionError: String? = null    // transient error from last flight command
 )
 
 enum class SdkConnectionState {

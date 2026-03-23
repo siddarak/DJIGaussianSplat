@@ -125,64 +125,6 @@ fun BottomTelemetryBar(state: DroneState) {
     }
 }
 
-/**
- * Left-side telemetry panel (vertical) — for landscape mode
- */
-@Composable
-fun LeftTelemetryPanel(state: DroneState) {
-    Column(
-        modifier = Modifier
-            .background(
-                Color.Black.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(topEnd = 8.dp, bottomEnd = 8.dp)
-            )
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        TelemetryItem(label = "ALT", value = "%.1f m".format(state.altitude))
-        TelemetryItem(label = "H.SPD", value = "%.1f m/s".format(state.speedHorizontal))
-        TelemetryItem(label = "V.SPD", value = "%.1f m/s".format(state.speedVertical))
-        TelemetryItem(label = "HDG", value = "%03.0f\u00B0".format(
-            if (state.heading < 0) state.heading + 360 else state.heading
-        ))
-    }
-}
-
-/**
- * Right-side panel — GPS + gimbal info
- */
-@Composable
-fun RightTelemetryPanel(state: DroneState) {
-    Column(
-        modifier = Modifier
-            .background(
-                Color.Black.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(topStart = 8.dp, bottomStart = 8.dp)
-            )
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-        horizontalAlignment = Alignment.End
-    ) {
-        TelemetryItem(
-            label = "SAT",
-            value = "${state.satelliteCount}",
-            valueColor = when {
-                state.satelliteCount >= 10 -> Color.Green
-                state.satelliteCount >= 6 -> Color.Yellow
-                else -> Color.Red
-            }
-        )
-        TelemetryItem(label = "GIMBAL", value = "%.0f\u00B0".format(state.gimbalPitch))
-        if (state.isFlying) {
-            TelemetryItem(
-                label = "FLY",
-                value = "ACTIVE",
-                valueColor = Color.Cyan
-            )
-        }
-    }
-}
-
 // --- Reusable components ---
 
 @Composable

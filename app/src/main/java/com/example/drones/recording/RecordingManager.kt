@@ -44,8 +44,11 @@ class RecordingManager(private val context: Context) {
     private var currentFilePath: String = ""
 
     // Volatile — written once per recording session on MSDK callback thread, read on many
+    // H.265 codec config: VPS (32), SPS (33), PPS (34) — Mini 4 Pro streams H.265
+    @Volatile private var vpsData: ByteArray? = null
     @Volatile private var spsData: ByteArray? = null
     @Volatile private var ppsData: ByteArray? = null
+    @Volatile private var vpsFound = false
     @Volatile private var spsFound = false
     @Volatile private var ppsFound = false
 
@@ -72,9 +75,11 @@ class RecordingManager(private val context: Context) {
 
         currentFilePath = outputFile.absolutePath
 
-        // Reset codec config — must happen before attaching listener
+        // Reset H.265 codec config — must happen before attaching listener
+        vpsFound = false
         spsFound = false
         ppsFound = false
+        vpsData = null
         spsData = null
         ppsData = null
 
@@ -158,7 +163,7 @@ class RecordingManager(private val context: Context) {
      * Must be fast and non-blocking.
      */
     private val rawStreamListener = ICameraStreamManager.ReceiveStreamListener { data, offset, length, _ ->
-        if (!_isOnDeviceRecording.get() || data == null) return@ReceiveStreamListener
+        if (!_isOnDeviceRecording.get()) return@ReceiveStreamListener
         try {
             processNalData(data, offset, length)
         } catch (e: Exception) {
@@ -167,33 +172,45 @@ class RecordingManager(private val context: Context) {
     }
 
     /**
-     * Parse NAL units from raw H.264 stream.
+     * Parse NAL units from raw H.265 (HEVC) stream.
      *
-     * H.264 NAL unit types (byte[4] & 0x1F):
-     *   7 = SPS, 8 = PPS, 5 = IDR (keyframe), 1 = non-IDR P/B-frame
+     * H.265 NAL unit header: 2 bytes — type = (byte[4] >> 1) & 0x3F
+     *   32 = VPS (Video Parameter Set)
+     *   33 = SPS (Sequence Parameter Set)
+     *   34 = PPS (Picture Parameter Set)
+     *   19 = IDR_W_RADL (keyframe)
+     *   20 = IDR_N_LP  (keyframe)
+     *   all others = non-key frames
      *
      * Start code (0x00 0x00 0x00 0x01) occupies bytes [0..3],
-     * so NAL type byte is at offset+4.
+     * so NAL header byte is at offset+4.
+     *
+     * Mini 4 Pro streams H.265 — confirmed by DJI MSDK documentation.
      */
     private fun processNalData(data: ByteArray, offset: Int, length: Int) {
-        // Guard: need at least start code (4 bytes) + NAL type byte
-        if (length < 5 || offset + 4 >= data.size) return
+        // Guard: need at least start code (4 bytes) + 2-byte NAL header
+        if (length < 6 || offset + 5 >= data.size) return
 
-        val nalType = data[offset + 4].toInt() and 0x1F
+        // H.265: nal_unit_type = (first_byte >> 1) & 0x3F
+        val nalType = (data[offset + 4].toInt() shr 1) and 0x3F
         val timestampUs = System.nanoTime() / 1000L
 
         when (nalType) {
-            7 -> { // SPS
+            32 -> { // VPS — store but not needed for muxer config; used as extra guard
+                vpsData = data.copyOfRange(offset + 4, offset + length)
+                vpsFound = true
+            }
+            33 -> { // SPS
                 spsData = data.copyOfRange(offset + 4, offset + length)
                 spsFound = true
                 tryConfigureMuxer()
             }
-            8 -> { // PPS
+            34 -> { // PPS
                 ppsData = data.copyOfRange(offset + 4, offset + length)
                 ppsFound = true
                 tryConfigureMuxer()
             }
-            5 -> { // IDR keyframe
+            19, 20 -> { // IDR keyframe (IDR_W_RADL or IDR_N_LP)
                 mp4Muxer?.writeNalUnit(data, offset, length, timestampUs, isKeyFrame = true)
             }
             else -> {
@@ -210,7 +227,7 @@ class RecordingManager(private val context: Context) {
         val sps = spsData
         val pps = ppsData
         if (spsFound && ppsFound && sps != null && pps != null) {
-            mp4Muxer?.configureSpsAndPps(sps, pps, isH265 = false)
+            mp4Muxer?.configureSpsAndPps(sps, pps, isH265 = true)
         }
     }
 
