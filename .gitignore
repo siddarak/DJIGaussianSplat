@@ -14,10 +14,19 @@ build/
 # IDE settings
 .idea/
 .claude/
+.claire/
 *.iml
+
+# macOS
+.DS_Store
+**/.DS_Store
 
 # DJI SDK Local Folder (Sub-repo/Large Files)
 DJI-SDK-V5/
 
 # Android Studio local properties
 local.properties
+
+# Reference docs (local only)
+*.docx
+*.txt
