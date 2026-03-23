@@ -224,10 +224,13 @@ class RecordingManager(private val context: Context) {
 
     private fun tryConfigureMuxer() {
         // Local copies for null-safety — volatile reads don't guarantee combined atomicity
+        val vps = vpsData
         val sps = spsData
         val pps = ppsData
-        if (spsFound && ppsFound && sps != null && pps != null) {
-            mp4Muxer?.configureSpsAndPps(sps, pps, isH265 = true)
+        // H.265 requires VPS + SPS + PPS all present before muxer can be configured.
+        // Android MediaMuxer for HEVC needs all three concatenated in csd-0.
+        if (vpsFound && spsFound && ppsFound && vps != null && sps != null && pps != null) {
+            mp4Muxer?.configureHevcCsd(vps, sps, pps)
         }
     }
 

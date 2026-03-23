@@ -38,22 +38,32 @@ class Mp4Muxer(
     private val muxerLock = Any()
 
     /**
-     * Configure codec parameters and start the muxer.
-     * Must be called once with SPS/PPS before any frames are written.
+     * Configure H.265 (HEVC) codec parameters and start the muxer.
+     *
+     * Android's MediaMuxer for HEVC requires a single csd-0 buffer containing
+     * VPS + SPS + PPS NAL units concatenated with 4-byte start codes
+     * (0x00 0x00 0x00 0x01). Using csd-0/csd-1 separately (the H.264 pattern)
+     * produces a broken MP4 that most decoders reject.
+     *
+     * The raw NAL data passed here must NOT include start codes — we prepend them.
+     *
      * Idempotent — safe to call multiple times (only acts on first call).
      */
-    fun configureSpsAndPps(spsData: ByteArray, ppsData: ByteArray, isH265: Boolean = false) {
+    fun configureHevcCsd(vpsData: ByteArray, spsData: ByteArray, ppsData: ByteArray) {
         synchronized(muxerLock) {
             if (muxerStarted) return
 
             var newMuxer: MediaMuxer? = null
             try {
-                val mime = if (isH265) MediaFormat.MIMETYPE_VIDEO_HEVC
-                           else MediaFormat.MIMETYPE_VIDEO_AVC
+                val startCode = byteArrayOf(0x00, 0x00, 0x00, 0x01)
 
-                val format = MediaFormat.createVideoFormat(mime, width, height).apply {
-                    setByteBuffer("csd-0", ByteBuffer.wrap(spsData))
-                    setByteBuffer("csd-1", ByteBuffer.wrap(ppsData))
+                // Concatenate: startCode+VPS + startCode+SPS + startCode+PPS
+                val csd0 = startCode + vpsData + startCode + spsData + startCode + ppsData
+
+                val format = MediaFormat.createVideoFormat(
+                    MediaFormat.MIMETYPE_VIDEO_HEVC, width, height
+                ).apply {
+                    setByteBuffer("csd-0", ByteBuffer.wrap(csd0))
                     setInteger(MediaFormat.KEY_FRAME_RATE, frameRate)
                     setInteger(MediaFormat.KEY_BIT_RATE, DEFAULT_BITRATE)
                 }
@@ -68,15 +78,13 @@ class Mp4Muxer(
                 // Only assign to field after fully started — prevents partial-init visibility
                 muxer = newMuxer
                 muxerStarted = true
-                Log.i(TAG, "Muxer started: ${outputFile.name} " +
-                        "${width}x${height}@${frameRate}fps ${if (isH265) "H.265" else "H.264"}")
+                Log.i(TAG, "HEVC muxer started: ${outputFile.name} ${width}x${height}@${frameRate}fps")
             } catch (e: Exception) {
-                // Release the local reference if we failed mid-init
                 try { newMuxer?.release() } catch (_: Exception) {}
                 muxer = null
                 muxerStarted = false
                 videoTrackIndex = -1
-                Log.e(TAG, "Failed to configure muxer: ${e.message}")
+                Log.e(TAG, "Failed to configure HEVC muxer: ${e.message}")
             }
         }
     }
