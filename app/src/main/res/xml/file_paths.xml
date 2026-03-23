@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- App-private external files (fallback location) -->
+    <external-files-path name="drone_captures" path="DroneCaptures/" />
+    <!-- Public Movies directory -->
+    <external-path name="movies" path="Movies/DroneCaptures/" />
+</paths>
