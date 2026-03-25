@@ -5,12 +5,12 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -32,30 +32,12 @@ import com.example.drones.ui.components.BottomTelemetryBar
 import com.example.drones.ui.components.FlightControlsPanel
 import com.example.drones.ui.components.ObjectSelector
 import com.example.drones.ui.components.RecordingControls
+import com.example.drones.ui.components.RecordingDebugOverlay
 import com.example.drones.ui.components.TopHudBar
 import com.example.drones.ui.components.VideoFeedView
 import com.example.drones.ui.components.WarningBanners
 import java.io.File
 
-/**
- * Main flight screen layout:
- *
- * ┌─────────────────────────────────────┐
- * │          TOP HUD BAR                │  SDK, Link, Mode, Signal, Battery
- * ├─────────────────────────────────────┤
- * │  WARNING BANNERS (animated)         │  Battery / signal / disconnect alerts
- * ├──────────┬──────────────┬───────────┤
- * │ FLIGHT   │              │ RECORD    │
- * │ CONTROLS │  VIDEO FEED  │ CONTROLS  │
- * │ (left)   │              │ + SELECT  │
- * │          │              │ (right)   │
- * ├─────────────────────────────────────┤
- * │          BOTTOM TELEMETRY BAR       │  ALT, H.SPD, V.SPD, HDG, SAT, GIMBAL
- * └─────────────────────────────────────┘
- *
- * Telemetry is shown ONCE — in the bottom bar only.
- * Left panel = flight controls. Right panel = recording + object select.
- */
 @Composable
 fun FlightScreen(viewModel: MainViewModel) {
     val state by viewModel.droneState.collectAsState()
@@ -72,7 +54,7 @@ fun FlightScreen(viewModel: MainViewModel) {
             isProductConnected = state.productConnected
         )
 
-        // Layer 1: Object selector overlay (below HUD, above video)
+        // Layer 1: Object selector overlay
         ObjectSelector(
             selectedRegion = state.selectedRegion,
             isSelectionMode = state.isSelectionMode,
@@ -83,10 +65,7 @@ fun FlightScreen(viewModel: MainViewModel) {
         // Layer 2: HUD
         Column(modifier = Modifier.fillMaxSize()) {
 
-            // Top bar: SDK / LINK / MODE / SIG / BATTERY
             TopHudBar(state)
-
-            // Animated warning banners
             WarningBanners(state)
 
             // Middle row: left controls | spacer | right controls
@@ -95,7 +74,7 @@ fun FlightScreen(viewModel: MainViewModel) {
                     .weight(1f)
                     .fillMaxSize()
             ) {
-                // LEFT — flight controls (takeoff/land/RTH/gimbal/emergency)
+                // LEFT — flight controls
                 FlightControlsPanel(
                     state = state,
                     onTakeOff           = { viewModel.takeOff() },
@@ -103,30 +82,28 @@ fun FlightScreen(viewModel: MainViewModel) {
                     onRth               = { viewModel.returnToHome() },
                     onCancelRth         = { viewModel.cancelRth() },
                     onConfirmLanding    = { viewModel.confirmLanding() },
-                    onEmergencyStop     = { viewModel.emergencyStop() },
+                    onEmergencyStop     = { },
                     onLockGimbal        = { viewModel.lockGimbal() },
                     onUnlockGimbal      = { viewModel.unlockGimbal() },
                     onResetGimbal       = { viewModel.resetGimbal() },
                     onGimbalPointDown   = { viewModel.setGimbalPitch(-90.0) }
                 )
 
-                // Center spacer — video feed shows through here
                 Spacer(modifier = Modifier.weight(1f))
 
-                // RIGHT — recording + object selection
+                // RIGHT — recording + object selection + debug
                 Column(
                     modifier = Modifier.padding(end = 8.dp, top = 8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    // Object SELECT / DONE button
+                    // Object SELECT / DONE
                     ActionButton(
                         label = if (state.isSelectionMode) "DONE" else "SELECT",
                         color = if (state.isSelectionMode) Color.Cyan else Color(0xFF90CAF9),
                         onClick = { viewModel.toggleSelectionMode() }
                     )
 
-                    // CLEAR selection (only shown when something is selected)
                     if (state.selectedRegion != null && !state.isSelectionMode) {
                         ActionButton(
                             label = "CLEAR",
@@ -146,11 +123,27 @@ fun FlightScreen(viewModel: MainViewModel) {
                         onStopRecording     = { viewModel.stopRecording() },
                         onOpenLastRecording = { openLastRecording(context, viewModel) }
                     )
+
+                    // Debug toggle button
+                    ActionButton(
+                        label = "DEBUG",
+                        color = Color.Gray,
+                        onClick = { viewModel.toggleDebugOverlay() }
+                    )
                 }
             }
 
-            // Bottom bar: all telemetry in one place (no duplicates)
             BottomTelemetryBar(state)
+        }
+
+        // Layer 3: Debug overlay (centered, on top of everything)
+        if (state.showDebugOverlay) {
+            RecordingDebugOverlay(
+                onDismiss = { viewModel.toggleDebugOverlay() },
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(16.dp)
+            )
         }
     }
 }
@@ -172,6 +165,22 @@ private fun ActionButton(label: String, color: Color, onClick: () -> Unit) {
 }
 
 private fun openLastRecording(context: android.content.Context, viewModel: MainViewModel) {
+    // Try MediaStore URI first (works with scoped storage)
+    val uri = viewModel.getLastRecordingUri()
+    if (uri != null) {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "video/mp4")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(Intent.createChooser(intent, "Open recording"))
+            return
+        } catch (e: Exception) {
+            android.util.Log.w("FlightScreen", "MediaStore URI failed: ${e.message}")
+        }
+    }
+
+    // Fallback to file path
     val path = viewModel.getLastRecordingPath()
     if (path.isEmpty()) return
 
@@ -182,27 +191,17 @@ private fun openLastRecording(context: android.content.Context, viewModel: MainV
     }
 
     try {
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        val fileUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
         val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "video/mp4")
+            setDataAndType(fileUri, "video/mp4")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         context.startActivity(Intent.createChooser(intent, "Open recording"))
     } catch (e: Exception) {
-        android.util.Log.w("FlightScreen", "FileProvider failed, trying folder: ${e.message}")
-        try {
-            context.startActivity(Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(
-                    Uri.parse("content://com.android.externalstorage.documents/document/primary:Movies%2FDroneCaptures"),
-                    "resource/folder"
-                )
-            })
-        } catch (e2: Exception) {
-            Toast.makeText(
-                context,
-                "Can't open file — check Movies/DroneCaptures",
-                Toast.LENGTH_LONG
-            ).show()
-        }
+        Toast.makeText(
+            context,
+            "Check Movies/DroneCaptures in your file manager",
+            Toast.LENGTH_LONG
+        ).show()
     }
 }

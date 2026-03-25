@@ -35,6 +35,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val recordingManager = RecordingManager(application)
     private var recordingTimerJob: Job? = null
     private var errorClearJob: Job? = null
+    private var gimbalLockJob: Job? = null
 
     init {
         observeSdkState()
@@ -62,6 +63,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     stopTelemetry()
                     if (recordingManager.isRecording) stopRecording()
+                    gimbalLockJob?.cancel()
+                    gimbalLockJob = null
                     // Reset flight action states on disconnect
                     _droneState.update { it.copy(
                         isTakingOff = false,
@@ -209,19 +212,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun lockGimbal() {
         val currentPitch = _droneState.value.gimbalPitch
-        GimbalController.lockAtCurrentAngle(currentPitch) { success, error ->
-            if (success) {
-                _droneState.update { it.copy(gimbalLocked = true, gimbalLockAngle = currentPitch) }
-            } else {
-                _droneState.update { it.copy(flightActionError = "Gimbal lock failed: $error") }
-                scheduleErrorClear()
-            }
-        }
+        _droneState.update { it.copy(gimbalLocked = true, gimbalLockAngle = currentPitch) }
+        startGimbalLockEnforcement(currentPitch)
     }
 
     fun unlockGimbal() {
-        // No SDK command needed — just stop enforcing the angle
+        gimbalLockJob?.cancel()
+        gimbalLockJob = null
         _droneState.update { it.copy(gimbalLocked = false) }
+    }
+
+    /**
+     * Continuously re-sends the gimbal angle command every 500ms to keep it locked.
+     * One-shot commands don't hold — the RC scroll wheel or vibration drifts the gimbal.
+     */
+    private fun startGimbalLockEnforcement(targetPitch: Double) {
+        gimbalLockJob?.cancel()
+        gimbalLockJob = viewModelScope.launch {
+            while (true) {
+                GimbalController.setPitch(targetPitch, durationSec = 0.0) { success, error ->
+                    if (!success) {
+                        Log.w(TAG, "Gimbal lock enforcement failed: $error")
+                    }
+                }
+                delay(500)
+            }
+        }
     }
 
     fun setGimbalPitch(degrees: Double) {
@@ -254,6 +270,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 onDeviceFilePath = filePath
             )}
         }
+        // Listen for the physical record button on the RC controller
+        recordingManager.listenForControllerRecordButton(
+            onStartRequested = { startRecording() },
+            onStopRequested = { stopRecording() }
+        )
+    }
+
+    fun toggleDebugOverlay() {
+        _droneState.update { it.copy(showDebugOverlay = !it.showDebugOverlay) }
     }
 
     fun startRecording() {
@@ -319,6 +344,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         stopTelemetry()
         recordingManager.cleanup()
         stopRecordingTimer()
+        gimbalLockJob?.cancel()
         errorClearJob?.cancel()
     }
 }

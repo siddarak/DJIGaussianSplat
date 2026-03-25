@@ -56,6 +56,9 @@ data class DroneState(
     val selectedRegion: RectF? = null,
     val isSelectionMode: Boolean = false,
 
+    // --- Debug ---
+    val showDebugOverlay: Boolean = false,
+
     // --- Error ---
     val errorMessage: String? = null,
     val flightActionError: String? = null    // transient error from last flight command
