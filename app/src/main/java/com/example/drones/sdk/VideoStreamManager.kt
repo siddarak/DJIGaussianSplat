@@ -81,14 +81,19 @@ object VideoStreamManager {
                 try { cameraStreamManager.removeReceiveStreamListener(old) } catch (_: Exception) {}
             }
             try {
+                // Ensure decoder is alive — raw stream only flows when decoding is active
+                cameraStreamManager.setKeepAliveDecoding(true)
+
                 cameraStreamManager.addReceiveStreamListener(
                     ComponentIndexType.LEFT_OR_MAIN,
                     listener
                 )
                 receiveStreamListener = listener
                 Log.i(TAG, "Raw stream listener added")
+                com.example.drones.recording.RecordingDebugLog.log("VideoStreamManager: listener added OK")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to add raw stream listener: ${e.message}")
+                com.example.drones.recording.RecordingDebugLog.log("VideoStreamManager: FAILED to add listener: ${e.message}")
             }
         }
     }
