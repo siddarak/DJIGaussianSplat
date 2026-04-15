@@ -27,6 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
+import com.example.drones.orbit.OrbitState
 import com.example.drones.ui.MainViewModel
 import com.example.drones.ui.components.BottomTelemetryBar
 import com.example.drones.ui.components.FlightControlsPanel
@@ -48,10 +49,13 @@ fun FlightScreen(viewModel: MainViewModel) {
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        // Layer 0: Full-screen video feed
+        // Layer 0: Full-screen video feed with live detection overlay
         VideoFeedView(
             modifier = Modifier.fillMaxSize(),
-            isProductConnected = state.productConnected
+            isProductConnected = state.productConnected,
+            detections = state.detections,
+            selectedId = state.selectedDetectionId,
+            onObjectTapped = { det -> viewModel.selectDetection(det) }
         )
 
         // Layer 1: Object selector overlay
@@ -82,7 +86,7 @@ fun FlightScreen(viewModel: MainViewModel) {
                     onRth               = { viewModel.returnToHome() },
                     onCancelRth         = { viewModel.cancelRth() },
                     onConfirmLanding    = { viewModel.confirmLanding() },
-                    onEmergencyStop     = { },
+                    onEmergencyStop     = { viewModel.emergencyStop() },
                     onLockGimbal        = { viewModel.lockGimbal() },
                     onUnlockGimbal      = { viewModel.unlockGimbal() },
                     onResetGimbal       = { viewModel.resetGimbal() },
@@ -111,6 +115,13 @@ fun FlightScreen(viewModel: MainViewModel) {
                             onClick = { viewModel.clearSelection() }
                         )
                     }
+
+                    // Orbit controls
+                    OrbitControls(
+                        state = state,
+                        onLockOrbit = { viewModel.lockOrbitTarget() },
+                        onAbortOrbit = { viewModel.abortOrbit() }
+                    )
 
                     // Recording controls
                     RecordingControls(
@@ -144,6 +155,60 @@ fun FlightScreen(viewModel: MainViewModel) {
                     .align(Alignment.Center)
                     .padding(16.dp)
             )
+        }
+    }
+}
+
+@Composable
+private fun OrbitControls(
+    state: com.example.drones.data.DroneState,
+    onLockOrbit: () -> Unit,
+    onAbortOrbit: () -> Unit
+) {
+    val orbitState = state.orbitState
+    val isOrbiting = orbitState is OrbitState.Flying ||
+            orbitState is OrbitState.Climbing ||
+            orbitState == OrbitState.TopShot ||
+            orbitState == OrbitState.Arming
+
+    if (isOrbiting) {
+        // Abort button + status while orbiting
+        val label = when (orbitState) {
+            is OrbitState.Arming   -> "ARM..."
+            is OrbitState.Climbing -> "CLIMB"
+            is OrbitState.Flying   -> {
+                val pct = orbitState.progressDeg.toInt()
+                "${orbitState.ring.label} $pct°"
+            }
+            OrbitState.TopShot -> "TOP"
+            else -> "ORBIT"
+        }
+        ActionButton(label = label, color = Color(0xFFFFD600), onClick = {})
+        ActionButton(label = "ABORT", color = Color.Red, onClick = onAbortOrbit)
+    } else {
+        // Lock button — only active when drone is flying and target selected
+        val canLock = state.productConnected && state.isFlying &&
+                state.forwardObstacleDistM in 0.38f..20f
+        val lockColor = when {
+            !state.productConnected || !state.isFlying -> Color.Gray
+            state.selectedDetectionId != null -> Color(0xFF76FF03)  // green — target selected
+            state.forwardObstacleDistM in 0.38f..20f -> Color(0xFF90CAF9)  // blue — sensor ready
+            else -> Color.Gray
+        }
+        val sensorText = if (state.forwardObstacleDistM > 0)
+            "%.1fm".format(state.forwardObstacleDistM) else "---"
+
+        ActionButton(
+            label = "ORBIT\n$sensorText",
+            color = lockColor,
+            onClick = { if (canLock) onLockOrbit() }
+        )
+
+        if (orbitState is OrbitState.Done) {
+            ActionButton(label = "DONE!", color = Color(0xFF76FF03), onClick = {})
+        }
+        if (orbitState is OrbitState.Error) {
+            ActionButton(label = "ERR", color = Color.Red, onClick = {})
         }
     }
 }

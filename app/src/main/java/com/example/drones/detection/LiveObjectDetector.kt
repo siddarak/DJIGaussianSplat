@@ -111,8 +111,10 @@ class LiveObjectDetector(
         frameWidth = width
         frameHeight = height
 
-        // Copy only the valid portion — MSDK reuses the buffer after this callback returns
-        val dataCopy = frame.copyOfRange(offset, offset + length)
+        // Bounds check — MSDK occasionally delivers inconsistent offset/length
+        val safeEnd = (offset + length).coerceAtMost(frame.size)
+        if (safeEnd <= offset) return@CameraFrameListener
+        val dataCopy = frame.copyOfRange(offset, safeEnd)
 
         executor.submit {
             if (!running.get() || detector == null) return@submit

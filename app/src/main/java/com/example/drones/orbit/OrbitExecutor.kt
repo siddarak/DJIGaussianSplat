@@ -4,7 +4,11 @@ import android.util.Log
 import com.example.drones.sdk.GimbalController
 import dji.sdk.keyvalue.key.FlightAssistantKey
 import dji.sdk.keyvalue.key.KeyTools
+import dji.sdk.keyvalue.value.flightcontroller.FlightCoordinateSystem
+import dji.sdk.keyvalue.value.flightcontroller.RollPitchControlMode
+import dji.sdk.keyvalue.value.flightcontroller.VerticalControlMode
 import dji.sdk.keyvalue.value.flightcontroller.VirtualStickFlightControlParam
+import dji.sdk.keyvalue.value.flightcontroller.YawControlMode
 import dji.v5.common.callback.CommonCallbacks
 import dji.v5.common.error.IDJIError
 import dji.v5.manager.KeyManager
@@ -248,8 +252,7 @@ class OrbitExecutor(
             VirtualStickManager.getInstance().enableVirtualStick(
                 object : CommonCallbacks.CompletionCallback {
                     override fun onSuccess() {
-                        // Earth frame, velocity mode for pitch/roll, angle mode for yaw
-                        VirtualStickManager.getInstance().setVirtualStickAdvancedModeEnabled(true)
+                        setupControlModes()
                         Log.i(TAG, "Virtual stick enabled")
                         onSuccess()
                     }
@@ -260,6 +263,28 @@ class OrbitExecutor(
             )
         } catch (e: Exception) {
             onState(OrbitState.Error("Virtual stick exception: ${e.message}"))
+        }
+    }
+
+    /**
+     * Configure advanced mode with Earth-frame velocity control.
+     * MUST be set before sending any commands — otherwise DJI defaults to
+     * body frame / angle mode which would make the orbit math completely wrong.
+     */
+    private fun setupControlModes() {
+        try {
+            val mgr = VirtualStickManager.getInstance()
+            mgr.setVirtualStickAdvancedModeEnabled(true)
+            // Advanced param controls: pitch=NorthVelocity, roll=EastVelocity, yaw=Angle, throttle=VerticalVelocity
+            val param = VirtualStickFlightControlParam()
+            param.rollPitchControlMode = RollPitchControlMode.VELOCITY
+            param.verticalControlMode = VerticalControlMode.VELOCITY
+            param.yawControlMode = YawControlMode.ANGLE
+            param.rollPitchCoordinateSystem = FlightCoordinateSystem.GROUND  // Earth frame (NED)
+            mgr.sendVirtualStickAdvancedParam(param)
+            Log.i(TAG, "Control modes configured: VELOCITY/GROUND/ANGLE")
+        } catch (e: Exception) {
+            Log.w(TAG, "setupControlModes: ${e.message}")
         }
     }
 
