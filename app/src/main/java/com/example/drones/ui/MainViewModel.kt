@@ -7,6 +7,12 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.drones.data.DroneState
 import com.example.drones.data.SdkConnectionState
+import com.example.drones.detection.DetectionResult
+import com.example.drones.detection.LiveObjectDetector
+import com.example.drones.orbit.MissionPlanner
+import com.example.drones.orbit.OrbitExecutor
+import com.example.drones.orbit.OrbitMission
+import com.example.drones.orbit.OrbitState
 import com.example.drones.recording.RecordingManager
 import com.example.drones.sdk.DjiSdkManager
 import com.example.drones.sdk.FlightController
@@ -37,6 +43,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var errorClearJob: Job? = null
     private var gimbalLockJob: Job? = null
 
+    private val objectDetector = LiveObjectDetector(application) { results ->
+        _droneState.update { it.copy(detections = results) }
+    }
+    private var orbitExecutor: OrbitExecutor? = null
+
     init {
         observeSdkState()
         setupRecordingCallbacks()
@@ -60,7 +71,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _droneState.update { it.copy(productConnected = connected) }
                 if (connected) {
                     startTelemetry()
+                    objectDetector.start()
                 } else {
+                    objectDetector.stop()
                     stopTelemetry()
                     if (recordingManager.isRecording) stopRecording()
                     gimbalLockJob?.cancel()
@@ -140,6 +153,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 is TelemetryUpdate.Signal        -> current.copy(
                     signalQuality = update.quality,
                     signalLost = update.quality < 10 && current.productConnected
+                )
+                is TelemetryUpdate.ForwardObstacle -> current.copy(
+                    forwardObstacleDistM = update.distanceM
                 )
             }
         }
@@ -325,7 +341,80 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun clearSelection() {
-        _droneState.update { it.copy(selectedRegion = null, isSelectionMode = false) }
+        _droneState.update { it.copy(selectedRegion = null, isSelectionMode = false, selectedDetectionId = null) }
+    }
+
+    // --- Detection + Orbit ---
+
+    fun selectDetection(det: DetectionResult) {
+        _droneState.update { it.copy(selectedDetectionId = det.trackId) }
+        Log.i(TAG, "Selected: ${det.label} (${det.trackId}), box=${det.boxNorm}")
+    }
+
+    /**
+     * Lock the current drone position as orbit target.
+     * Uses forward obstacle sensor for radius, heading for center direction.
+     */
+    fun lockOrbitTarget(objectHeightM: Float = 1.0f) {
+        val state = _droneState.value
+        val sensorDist = state.forwardObstacleDistM
+
+        if (sensorDist < 0.38f || sensorDist > 20f) {
+            _droneState.update { it.copy(flightActionError =
+                if (sensorDist < 0.38f) "Too close — move back (min 0.4m)"
+                else "Out of sensor range — move within 20m") }
+            scheduleErrorClear()
+            return
+        }
+
+        val (cLat, cLon, cAlt) = MissionPlanner.computeCenter(
+            state.latitude, state.longitude, state.altitude,
+            state.heading, sensorDist.toDouble()
+        )
+        val startAngle = MissionPlanner.startAngleDeg(state.heading)
+
+        val mission = OrbitMission(
+            centerLat = cLat,
+            centerLon = cLon,
+            centerAlt = cAlt,
+            orbitRadius = sensorDist.toDouble(),
+            objectHeight = objectHeightM.toDouble(),
+            lockAlt = state.altitude,
+            startAngleDeg = startAngle
+        )
+        val rings = MissionPlanner.executionOrder(MissionPlanner.planRings(mission))
+
+        Log.i(TAG, "Orbit locked: radius=${sensorDist}m center=($cLat,$cLon) rings=${rings.size}")
+        _droneState.update { it.copy(
+            orbitLockedRadius = sensorDist,
+            orbitObjectHeight = objectHeightM,
+            orbitState = OrbitState.Arming
+        )}
+
+        orbitExecutor?.abort()
+        orbitExecutor = OrbitExecutor(
+            mission = mission,
+            rings = rings,
+            getForwardObstacleDist = { _droneState.value.forwardObstacleDistM },
+            getDroneAlt = { _droneState.value.altitude },
+            onState = { orbitState ->
+                _droneState.update { it.copy(orbitState = orbitState) }
+                if (orbitState is OrbitState.Flying && !_droneState.value.isRecordingOnDevice) {
+                    startRecording()  // auto-start recording when orbit begins
+                }
+                if (orbitState == OrbitState.Done || orbitState == OrbitState.Aborted) {
+                    stopRecording()
+                    orbitExecutor = null
+                }
+            }
+        )
+        orbitExecutor?.start()
+    }
+
+    fun abortOrbit() {
+        orbitExecutor?.abort()
+        orbitExecutor = null
+        _droneState.update { it.copy(orbitState = OrbitState.Idle) }
     }
 
     // --- Helpers ---
@@ -341,6 +430,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         super.onCleared()
+        objectDetector.stop()
+        orbitExecutor?.abort()
         stopTelemetry()
         recordingManager.cleanup()
         stopRecordingTimer()

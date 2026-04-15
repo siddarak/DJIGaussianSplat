@@ -28,6 +28,8 @@ android {
             pickFirsts.add("lib/*/libc++_shared.so")
             pickFirsts.add("lib/*/libgnustl_shared.so")
             excludes.add("META-INF/INDEX.LIST")
+            excludes.add("META-INF/DEPENDENCIES")
+            pickFirsts.add("META-INF/LICENSE")
         }
         jniLibs {
             // Mandatory for DJI SDK V5 native library loading
@@ -75,6 +77,11 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
     
+    // TFLite — on-device object detection
+    implementation("org.tensorflow:tensorflow-lite-task-vision:0.4.4")
+    implementation("org.tensorflow:tensorflow-lite-gpu-delegate-plugin:0.4.4")
+    implementation("org.tensorflow:tensorflow-lite-gpu:2.14.0")
+
     // DJI SDK V5
     implementation(libs.dji.sdk.v5.aircraft)
     implementation(libs.dji.sdk.v5.network.support)

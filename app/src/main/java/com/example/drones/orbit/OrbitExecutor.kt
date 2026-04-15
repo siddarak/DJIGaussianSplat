@@ -2,9 +2,9 @@ package com.example.drones.orbit
 
 import android.util.Log
 import com.example.drones.sdk.GimbalController
-import dji.sdk.keyvalue.key.FlightControllerKey
+import dji.sdk.keyvalue.key.FlightAssistantKey
 import dji.sdk.keyvalue.key.KeyTools
-import dji.sdk.keyvalue.key.PerceptionKey
+import dji.sdk.keyvalue.value.flightcontroller.VirtualStickFlightControlParam
 import dji.v5.common.callback.CommonCallbacks
 import dji.v5.common.error.IDJIError
 import dji.v5.manager.KeyManager
@@ -281,12 +281,12 @@ class OrbitExecutor(
             0.0 else verticalVelocity
 
         try {
-            val data = dji.v5.manager.aircraft.virtualstick.VirtualStickFlightControlParam()
-            data.pitch = vNorth.toFloat().coerceIn(-MAX_VELOCITY_MS.toFloat(), MAX_VELOCITY_MS.toFloat())
-            data.roll  = vEast.toFloat().coerceIn(-MAX_VELOCITY_MS.toFloat(), MAX_VELOCITY_MS.toFloat())
-            data.yaw   = yawDeg.toFloat()
-            data.verticalThrottle = safeVertical.toFloat().coerceIn(-4f, 4f)
-            VirtualStickManager.getInstance().sendVirtualStickFlightControlData(data, null)
+            val data = VirtualStickFlightControlParam()
+            data.pitch = vNorth.coerceIn(-MAX_VELOCITY_MS, MAX_VELOCITY_MS)
+            data.roll  = vEast.coerceIn(-MAX_VELOCITY_MS, MAX_VELOCITY_MS)
+            data.yaw   = yawDeg
+            data.verticalThrottle = safeVertical.coerceIn(-4.0, 4.0)
+            VirtualStickManager.getInstance().sendVirtualStickAdvancedParam(data)
         } catch (e: Exception) {
             Log.w(TAG, "sendVirtualStick: ${e.message}")
         }
@@ -298,11 +298,11 @@ class OrbitExecutor(
         Log.w(TAG, "Disabling landing protection for low orbit")
         try {
             KeyManager.getInstance().setValue(
-                KeyTools.createKey(FlightControllerKey.KeyLandingProtectionEnabled),
+                KeyTools.createKey(FlightAssistantKey.KeyLandingProtectionEnabled),
                 false, null
             )
             KeyManager.getInstance().setValue(
-                KeyTools.createKey(PerceptionKey.KeyDownwardVisionObstacleAvoidanceEnabled),
+                KeyTools.createKey(FlightAssistantKey.KeyDownwardsAvoidanceEnable),
                 false, null
             )
         } catch (e: Exception) {
@@ -314,11 +314,11 @@ class OrbitExecutor(
         Log.i(TAG, "Restoring landing protection")
         try {
             KeyManager.getInstance().setValue(
-                KeyTools.createKey(FlightControllerKey.KeyLandingProtectionEnabled),
+                KeyTools.createKey(FlightAssistantKey.KeyLandingProtectionEnabled),
                 true, null
             )
             KeyManager.getInstance().setValue(
-                KeyTools.createKey(PerceptionKey.KeyDownwardVisionObstacleAvoidanceEnabled),
+                KeyTools.createKey(FlightAssistantKey.KeyDownwardsAvoidanceEnable),
                 true, null
             )
         } catch (e: Exception) {

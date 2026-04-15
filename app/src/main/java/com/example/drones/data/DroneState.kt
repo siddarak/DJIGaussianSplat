@@ -1,6 +1,7 @@
 package com.example.drones.data
 
 import android.graphics.RectF
+import com.example.drones.detection.DetectionResult
 import com.example.drones.orbit.OrbitState
 
 data class DroneState(
@@ -52,6 +53,10 @@ data class DroneState(
     val criticalBatteryWarning: Boolean = false,
     val isFailsafe: Boolean = false,
     val signalLost: Boolean = false,
+
+    // --- Object Detection ---
+    val detections: List<DetectionResult> = emptyList(),
+    val selectedDetectionId: Int? = null,
 
     // --- Object Selection ---
     val selectedRegion: RectF? = null,

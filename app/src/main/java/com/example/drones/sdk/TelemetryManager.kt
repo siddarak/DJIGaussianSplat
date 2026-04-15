@@ -6,7 +6,7 @@ import dji.sdk.keyvalue.key.BatteryKey
 import dji.sdk.keyvalue.key.FlightControllerKey
 import dji.sdk.keyvalue.key.GimbalKey
 import dji.sdk.keyvalue.key.KeyTools
-import dji.sdk.keyvalue.key.PerceptionKey
+import dji.sdk.keyvalue.key.FlightAssistantKey
 import dji.sdk.keyvalue.value.common.Attitude
 import dji.sdk.keyvalue.value.common.LocationCoordinate3D
 import dji.sdk.keyvalue.value.common.Velocity3D
@@ -166,8 +166,8 @@ class TelemetryManager(
      * Key: PerceptionKey.KeyForwardObstacleDistance (verify against SDK jar).
      */
     private fun listenForwardObstacle() = safeSubscribe("forwardObstacle") {
-        val key = KeyTools.createKey(PerceptionKey.KeyForwardObstacleDistance)
-        keyManager.listen(key, this) { _, v ->
+        val key = KeyTools.createKey(FlightAssistantKey.KeyOmniHorizontalRadarDistance)
+        keyManager.listen(key, this) { _, v: Double? ->
             v?.let { onTelemetryUpdate(TelemetryUpdate.ForwardObstacle(it.toFloat())) }
         }
     }
