@@ -25,6 +25,10 @@ object GimbalController {
 
     private const val TAG = "GimbalController"
 
+    /** Last pitch we commanded — used for smooth interpolation during altitude transitions. */
+    @Volatile var currentPitchEstimate: Double = 0.0
+        private set
+
     /**
      * Set gimbal to an absolute pitch angle.
      * @param pitchDegrees  Target degrees. Mini 4 Pro range: ~-90 (down) to +35 (up).
@@ -35,6 +39,7 @@ object GimbalController {
         durationSec: Double = 0.5,
         onResult: ((Boolean, String?) -> Unit)? = null
     ) {
+        currentPitchEstimate = pitchDegrees
         try {
             val rotation = GimbalAngleRotation().apply {
                 mode = GimbalAngleRotationMode.ABSOLUTE_ANGLE

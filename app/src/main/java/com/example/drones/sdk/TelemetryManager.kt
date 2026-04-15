@@ -6,6 +6,7 @@ import dji.sdk.keyvalue.key.BatteryKey
 import dji.sdk.keyvalue.key.FlightControllerKey
 import dji.sdk.keyvalue.key.GimbalKey
 import dji.sdk.keyvalue.key.KeyTools
+import dji.sdk.keyvalue.key.PerceptionKey
 import dji.sdk.keyvalue.value.common.Attitude
 import dji.sdk.keyvalue.value.common.LocationCoordinate3D
 import dji.sdk.keyvalue.value.common.Velocity3D
@@ -48,6 +49,7 @@ class TelemetryManager(
         listenBatteryTemp()
         listenGimbal()
         listenSignal()
+        listenForwardObstacle()
     }
 
     /**
@@ -156,6 +158,20 @@ class TelemetryManager(
         }
     }
 
+    // --- Perception / Obstacle ---
+
+    /**
+     * Forward obstacle distance from binocular vision sensors.
+     * Mini 4 Pro range: 0.38–20m. Returns 0 when out of range or no obstacle.
+     * Key: PerceptionKey.KeyForwardObstacleDistance (verify against SDK jar).
+     */
+    private fun listenForwardObstacle() = safeSubscribe("forwardObstacle") {
+        val key = KeyTools.createKey(PerceptionKey.KeyForwardObstacleDistance)
+        keyManager.listen(key, this) { _, v ->
+            v?.let { onTelemetryUpdate(TelemetryUpdate.ForwardObstacle(it.toFloat())) }
+        }
+    }
+
     // --- AirLink / Signal ---
 
     private fun listenSignal() = safeSubscribe("signal") {
@@ -195,4 +211,5 @@ sealed class TelemetryUpdate {
     data class BatteryTemp(val celsius: Double) : TelemetryUpdate()
     data class GimbalAttitude(val pitch: Double, val yaw: Double, val roll: Double) : TelemetryUpdate()
     data class Signal(val quality: Int) : TelemetryUpdate()
+    data class ForwardObstacle(val distanceM: Float) : TelemetryUpdate()
 }

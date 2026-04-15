@@ -1,6 +1,7 @@
 package com.example.drones.data
 
 import android.graphics.RectF
+import com.example.drones.orbit.OrbitState
 
 data class DroneState(
     // --- Connection ---
@@ -52,9 +53,17 @@ data class DroneState(
     val isFailsafe: Boolean = false,
     val signalLost: Boolean = false,
 
-    // --- Object Selection (Layer 2 foundation) ---
+    // --- Object Selection ---
     val selectedRegion: RectF? = null,
     val isSelectionMode: Boolean = false,
+
+    // --- Obstacle sensor ---
+    val forwardObstacleDistM: Float = 0f,   // 0 = no reading / out of range
+
+    // --- Orbit mission ---
+    val orbitState: OrbitState = OrbitState.Idle,
+    val orbitLockedRadius: Float = 0f,      // sensor reading at lock time
+    val orbitObjectHeight: Float = 1.0f,    // user estimate in meters
 
     // --- Debug ---
     val showDebugOverlay: Boolean = false,
