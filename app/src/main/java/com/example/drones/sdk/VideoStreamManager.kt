@@ -45,6 +45,25 @@ object VideoStreamManager {
                 )
                 currentSurface = surface
                 Log.i(TAG, "Video feed started: ${width}x${height}")
+
+                // Re-register decoded frame listener now that the decoder pipeline is live.
+                // addFrameListener registered before a surface attaches silently receives
+                // no frames on some MSDK versions — re-register here to guarantee delivery.
+                frameListener?.let { pending ->
+                    try {
+                        cameraStreamManager.removeFrameListener(pending)
+                    } catch (_: Exception) {}
+                    try {
+                        cameraStreamManager.addFrameListener(
+                            ComponentIndexType.LEFT_OR_MAIN,
+                            ICameraStreamManager.FrameFormat.NV21,
+                            pending
+                        )
+                        Log.i(TAG, "Re-registered decoded frame listener after surface attach")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Frame listener re-register failed: ${e.message}")
+                    }
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to start video feed: ${e.message}")
                 currentSurface = null

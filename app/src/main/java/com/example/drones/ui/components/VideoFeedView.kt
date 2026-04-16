@@ -44,6 +44,8 @@ fun VideoFeedView(
     isProductConnected: Boolean,
     detections: List<DetectionResult> = emptyList(),
     selectedId: Int? = null,
+    modelLoaded: Boolean = false,
+    framesReceived: Long = 0L,
     onObjectTapped: (DetectionResult) -> Unit = {}
 ) {
     var surfaceReady by remember { mutableStateOf(false) }
@@ -180,6 +182,33 @@ fun VideoFeedView(
                     .padding(bottom = 16.dp)
                     .background(Color.Black.copy(alpha = 0.45f))
                     .padding(horizontal = 12.dp, vertical = 4.dp)
+            )
+        }
+
+        // Detection status chip — always visible so you can diagnose issues
+        if (isProductConnected) {
+            val statusText = when {
+                !modelLoaded               -> "MODEL LOADING..."
+                framesReceived == 0L       -> "WAITING FOR FRAMES"
+                detections.isEmpty()       -> "DETECTING... (${framesReceived} frames)"
+                else                       -> "${detections.size} OBJECT${if (detections.size > 1) "S" else ""} FOUND"
+            }
+            val statusColor = when {
+                !modelLoaded         -> Color.Yellow
+                framesReceived == 0L -> Color(0xFFFF6D00)  // orange
+                detections.isEmpty() -> Color.White.copy(alpha = 0.6f)
+                else                 -> Color(0xFF76FF03)   // green
+            }
+            Text(
+                text = statusText,
+                color = statusColor,
+                fontSize = androidx.compose.ui.unit.TextUnit(9f, androidx.compose.ui.unit.TextUnitType.Sp),
+                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 48.dp, end = 8.dp)
+                    .background(Color.Black.copy(alpha = 0.55f), androidx.compose.foundation.shape.RoundedCornerShape(4.dp))
+                    .padding(horizontal = 6.dp, vertical = 3.dp)
             )
         }
 

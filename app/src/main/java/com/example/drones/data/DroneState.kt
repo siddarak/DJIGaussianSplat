@@ -57,6 +57,8 @@ data class DroneState(
     // --- Object Detection ---
     val detections: List<DetectionResult> = emptyList(),
     val selectedDetectionId: Int? = null,
+    val detectionModelLoaded: Boolean = false,
+    val detectionFramesReceived: Long = 0L,
 
     // --- Object Selection ---
     val selectedRegion: RectF? = null,

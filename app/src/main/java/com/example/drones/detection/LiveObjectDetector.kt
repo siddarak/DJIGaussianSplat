@@ -37,7 +37,7 @@ class LiveObjectDetector(
         private const val TAG = "LiveObjectDetector"
         private const val MODEL_FILE = "efficientdet_lite0.tflite"
         private const val MAX_RESULTS = 5
-        private const val SCORE_THRESHOLD = 0.45f
+        private const val SCORE_THRESHOLD = 0.30f   // lowered — drone distances reduce confidence
         private const val MAX_FPS = 8
         private const val FRAME_INTERVAL_MS = 1000L / MAX_FPS
     }
@@ -48,6 +48,11 @@ class LiveObjectDetector(
     private var detector: ObjectDetector? = null
     private val running = AtomicBoolean(false)
     private var lastFrameMs = 0L
+
+    // Public counters — ViewModel exposes these to the debug overlay
+    @Volatile var framesReceived = 0L; private set
+    @Volatile var inferencesRun = 0L; private set
+    @Volatile var modelLoaded = false; private set
 
     // Cached frame dimensions for NV21→Bitmap conversion
     @Volatile private var frameWidth = 0
@@ -83,9 +88,10 @@ class LiveObjectDetector(
                 .setScoreThreshold(SCORE_THRESHOLD)
                 .build()
             detector = ObjectDetector.createFromFileAndOptions(context, MODEL_FILE, options)
-            Log.i(TAG, "EfficientDet-Lite0 loaded")
+            modelLoaded = true
+            Log.i(TAG, "EfficientDet-Lite0 loaded (GPU)")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to load model: ${e.message}")
+            Log.e(TAG, "GPU load failed: ${e.message} — retrying CPU")
             // Retry without GPU
             try {
                 val options = ObjectDetector.ObjectDetectorOptions.builder()
@@ -93,9 +99,10 @@ class LiveObjectDetector(
                     .setScoreThreshold(SCORE_THRESHOLD)
                     .build()
                 detector = ObjectDetector.createFromFileAndOptions(context, MODEL_FILE, options)
-                Log.i(TAG, "EfficientDet-Lite0 loaded (CPU fallback)")
+                modelLoaded = true
+                Log.i(TAG, "EfficientDet-Lite0 loaded (CPU)")
             } catch (e2: Exception) {
-                Log.e(TAG, "Model load failed entirely: ${e2.message}")
+                Log.e(TAG, "Model load FAILED entirely: ${e2.message}")
             }
         }
     }
@@ -110,6 +117,8 @@ class LiveObjectDetector(
 
         frameWidth = width
         frameHeight = height
+        framesReceived++
+        if (framesReceived == 1L) Log.i(TAG, "First decoded frame: ${width}x${height}")
 
         // Bounds check — MSDK occasionally delivers inconsistent offset/length
         val safeEnd = (offset + length).coerceAtMost(frame.size)
@@ -122,6 +131,8 @@ class LiveObjectDetector(
                 val bitmap = nv21ToBitmap(dataCopy, width, height) ?: return@submit
                 val tensorImage = TensorImage.fromBitmap(bitmap)
                 val rawResults = detector?.detect(tensorImage) ?: return@submit
+                inferencesRun++
+                if (inferencesRun % 30 == 1L) Log.d(TAG, "Inference #$inferencesRun: ${rawResults.size} detections")
 
                 val results = rawResults.mapIndexed { idx, detection ->
                     val cat = detection.categories.firstOrNull()

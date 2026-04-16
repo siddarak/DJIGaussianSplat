@@ -43,14 +43,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var errorClearJob: Job? = null
     private var gimbalLockJob: Job? = null
 
-    private val objectDetector = LiveObjectDetector(application) { results ->
-        _droneState.update { it.copy(detections = results) }
-    }
+    private lateinit var objectDetector: LiveObjectDetector
     private var orbitExecutor: OrbitExecutor? = null
+    private var detectionStatusJob: Job? = null
 
     init {
+        objectDetector = LiveObjectDetector(application) { results ->
+            _droneState.update { it.copy(
+                detections = results,
+                detectionModelLoaded = objectDetector.modelLoaded,
+                detectionFramesReceived = objectDetector.framesReceived
+            )}
+        }
         observeSdkState()
         setupRecordingCallbacks()
+        startDetectionStatusTicker()
+    }
+
+    /** Pushes model/frame status every 2s so the debug overlay stays current. */
+    private fun startDetectionStatusTicker() {
+        detectionStatusJob = viewModelScope.launch {
+            while (true) {
+                delay(2000)
+                _droneState.update { it.copy(
+                    detectionModelLoaded = objectDetector.modelLoaded,
+                    detectionFramesReceived = objectDetector.framesReceived
+                )}
+            }
+        }
     }
 
     // --- SDK state observation ---
@@ -430,6 +450,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         super.onCleared()
+        detectionStatusJob?.cancel()
         objectDetector.stop()
         orbitExecutor?.abort()
         stopTelemetry()
