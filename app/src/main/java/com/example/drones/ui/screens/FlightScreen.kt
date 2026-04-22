@@ -57,6 +57,8 @@ fun FlightScreen(viewModel: MainViewModel) {
             selectedId = state.selectedDetectionId,
             modelLoaded = state.detectionModelLoaded,
             framesReceived = state.detectionFramesReceived,
+            modelErrorText = state.detectionModelError,
+            detectionDebugInfo = state.detectionDebugInfo,
             onObjectTapped = { det -> viewModel.selectDetection(det) }
         )
 

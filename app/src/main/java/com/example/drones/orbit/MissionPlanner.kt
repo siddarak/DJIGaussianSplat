@@ -92,7 +92,8 @@ object MissionPlanner {
      * Returns rings in the order they should be flown.
      */
     fun executionOrder(rings: List<OrbitRing>): List<OrbitRing> {
-        val eq = rings.first { it.phase == OrbitPhase.EQUATORIAL }
+        val eq = rings.firstOrNull { it.phase == OrbitPhase.EQUATORIAL }
+            ?: return rings  // fallback: fly rings as-planned if planner is misconfigured
         val low = rings.filter { it.phase == OrbitPhase.LOW }
         val ascending = rings.filter { it.phase != OrbitPhase.EQUATORIAL && it.phase != OrbitPhase.LOW }
         // EQ → LOW → EQ → ascending...

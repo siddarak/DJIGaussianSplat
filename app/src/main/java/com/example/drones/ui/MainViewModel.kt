@@ -52,7 +52,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _droneState.update { it.copy(
                 detections = results,
                 detectionModelLoaded = objectDetector.modelLoaded,
-                detectionFramesReceived = objectDetector.framesReceived
+                detectionFramesReceived = objectDetector.framesReceived,
+                detectionModelError = objectDetector.modelLoadError
             )}
         }
         observeSdkState()
@@ -67,7 +68,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 delay(2000)
                 _droneState.update { it.copy(
                     detectionModelLoaded = objectDetector.modelLoaded,
-                    detectionFramesReceived = objectDetector.framesReceived
+                    detectionFramesReceived = objectDetector.framesReceived,
+                    detectionModelError = objectDetector.modelLoadError,
+                    detectionDebugInfo = objectDetector.debugInfo
                 )}
             }
         }
@@ -176,6 +179,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
                 is TelemetryUpdate.ForwardObstacle -> current.copy(
                     forwardObstacleDistM = update.distanceM
+                )
+                is TelemetryUpdate.LandingConfirmation -> current.copy(
+                    isLandingConfirmationRequired = update.needed
                 )
             }
         }

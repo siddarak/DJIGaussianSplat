@@ -77,10 +77,8 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
     
-    // TFLite — on-device object detection
-    implementation("org.tensorflow:tensorflow-lite-task-vision:0.4.4")
-    implementation("org.tensorflow:tensorflow-lite-gpu-delegate-plugin:0.4.4")
-    implementation("org.tensorflow:tensorflow-lite-gpu:2.14.0")
+    // TFLite — raw interpreter avoids task_vision_jni conflict with DJI native libs
+    implementation("org.tensorflow:tensorflow-lite:2.14.0")
 
     // DJI SDK V5
     implementation(libs.dji.sdk.v5.aircraft)

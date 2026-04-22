@@ -8,7 +8,6 @@ data class DroneState(
     // --- Connection ---
     val sdkRegistered: Boolean = false,
     val productConnected: Boolean = false,
-    val rcConnected: Boolean = false,
 
     // --- Telemetry ---
     val altitude: Double = 0.0,
@@ -59,6 +58,8 @@ data class DroneState(
     val selectedDetectionId: Int? = null,
     val detectionModelLoaded: Boolean = false,
     val detectionFramesReceived: Long = 0L,
+    val detectionModelError: String? = null,
+    val detectionDebugInfo: String = "",
 
     // --- Object Selection ---
     val selectedRegion: RectF? = null,

@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.util.Log
 import com.example.drones.sdk.DjiSdkManager
+import com.example.drones.sdk.FlightController
 
 class DronesApplication : Application() {
 
@@ -13,9 +14,6 @@ class DronesApplication : Application() {
 
     override fun attachBaseContext(base: Context) {
         super.attachBaseContext(base)
-        // DJI's native library loader — must be called before any SDK class is used.
-        // Wrapped in try-catch: if this fails the app will still launch, but DJI
-        // features will be unavailable. DjiSdkManager will report the failure.
         try {
             com.cySdkyc.clx.Helper.install(this)
         } catch (e: Exception) {
@@ -26,5 +24,23 @@ class DronesApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         DjiSdkManager.init(this)
+        installCrashSafetyHandler()
+    }
+
+    /**
+     * If the app crashes while the drone is flying, attempt RTH before the process dies.
+     * RTH is preferred over land — safer if we don't know terrain below.
+     * We sleep briefly to give the SDK time to dispatch the command before process exit.
+     */
+    private fun installCrashSafetyHandler() {
+        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, ex ->
+            Log.e(TAG, "UNCAUGHT EXCEPTION — attempting RTH before crash", ex)
+            try {
+                FlightController.returnToHome { _, _ -> }
+                Thread.sleep(2500)
+            } catch (_: Exception) {}
+            defaultHandler?.uncaughtException(thread, ex)
+        }
     }
 }

@@ -75,7 +75,6 @@ class Mp4Muxer(
                 videoTrackIndex = newMuxer.addTrack(format)
                 newMuxer.start()
 
-                // Only assign to field after fully started — prevents partial-init visibility
                 muxer = newMuxer
                 muxerStarted = true
                 Log.i(TAG, "HEVC muxer started: ${outputFile.name} ${width}x${height}@${frameRate}fps")
@@ -85,6 +84,51 @@ class Mp4Muxer(
                 muxerStarted = false
                 videoTrackIndex = -1
                 Log.e(TAG, "Failed to configure HEVC muxer: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Configure H.264 (AVC) codec parameters and start the muxer.
+     *
+     * H.264 uses separate csd-0 (SPS) and csd-1 (PPS) buffers, each with
+     * a 4-byte start code prefix.
+     *
+     * Idempotent — safe to call multiple times (only acts on first call).
+     */
+    fun configureAvcCsd(spsData: ByteArray, ppsData: ByteArray) {
+        synchronized(muxerLock) {
+            if (muxerStarted) return
+
+            var newMuxer: MediaMuxer? = null
+            try {
+                val startCode = byteArrayOf(0x00, 0x00, 0x00, 0x01)
+
+                val format = MediaFormat.createVideoFormat(
+                    MediaFormat.MIMETYPE_VIDEO_AVC, width, height
+                ).apply {
+                    setByteBuffer("csd-0", ByteBuffer.wrap(startCode + spsData))
+                    setByteBuffer("csd-1", ByteBuffer.wrap(startCode + ppsData))
+                    setInteger(MediaFormat.KEY_FRAME_RATE, frameRate)
+                    setInteger(MediaFormat.KEY_BIT_RATE, DEFAULT_BITRATE)
+                }
+
+                newMuxer = MediaMuxer(
+                    outputFile.absolutePath,
+                    MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4
+                )
+                videoTrackIndex = newMuxer.addTrack(format)
+                newMuxer.start()
+
+                muxer = newMuxer
+                muxerStarted = true
+                Log.i(TAG, "AVC muxer started: ${outputFile.name} ${width}x${height}@${frameRate}fps")
+            } catch (e: Exception) {
+                try { newMuxer?.release() } catch (_: Exception) {}
+                muxer = null
+                muxerStarted = false
+                videoTrackIndex = -1
+                Log.e(TAG, "Failed to configure AVC muxer: ${e.message}")
             }
         }
     }

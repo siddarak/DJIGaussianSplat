@@ -123,7 +123,7 @@ class OrbitExecutor(
                 }
 
                 if (ring.phase == OrbitPhase.TOP_SHOT) {
-                    executeTopShot()
+                    executeTopShot(ring)
                 } else {
                     executeSingleOrbit(ring, index)
                 }
@@ -229,9 +229,9 @@ class OrbitExecutor(
     /**
      * Top shot: fly to overhead position (not an orbit), rotate 360° yawing slowly.
      */
-    private suspend fun executeTopShot() {
+    private suspend fun executeTopShot(ring: OrbitRing) {
         onState(OrbitState.TopShot)
-        GimbalController.setPitch(-85.0)
+        GimbalController.setPitch(ring.gimbalPitch)
 
         // Hover and rotate 360°
         val totalTicks = (360.0 / TOP_SHOT_YAW_SPEED * TICK_HZ).toInt()

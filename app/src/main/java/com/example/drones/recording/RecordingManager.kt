@@ -38,13 +38,23 @@ class RecordingManager(private val context: Context) {
     private var mp4Muxer: Mp4Muxer? = null
     private var currentFilePath: String = ""
 
-    // H.265 codec config
+    // Codec config — auto-detected from first parameter NALs received
+    private enum class CodecType { UNKNOWN, H265, H264 }
+    @Volatile private var codecType = CodecType.UNKNOWN
+
+    // H.265 parameter sets
     @Volatile private var vpsData: ByteArray? = null
     @Volatile private var spsData: ByteArray? = null
     @Volatile private var ppsData: ByteArray? = null
     @Volatile private var vpsFound = false
     @Volatile private var spsFound = false
     @Volatile private var ppsFound = false
+
+    // H.264 parameter sets
+    @Volatile private var avcSpsData: ByteArray? = null
+    @Volatile private var avcPpsData: ByteArray? = null
+    @Volatile private var avcSpsFound = false
+    @Volatile private var avcPpsFound = false
 
     // Debug counters
     private val rawFrameCount = AtomicLong(0)
@@ -109,13 +119,12 @@ class RecordingManager(private val context: Context) {
         RecordingDebugLog.log("Output file: ${outputFile.absolutePath}")
         RecordingDebugLog.log("Dir exists: ${outputFile.parentFile?.exists()}, writable: ${outputFile.parentFile?.canWrite()}")
 
-        // Reset H.265 codec config
-        vpsFound = false
-        spsFound = false
-        ppsFound = false
-        vpsData = null
-        spsData = null
-        ppsData = null
+        // Reset codec state
+        codecType = CodecType.UNKNOWN
+        vpsFound = false; spsFound = false; ppsFound = false
+        vpsData = null; spsData = null; ppsData = null
+        avcSpsFound = false; avcPpsFound = false
+        avcSpsData = null; avcPpsData = null
         rawFrameCount.set(0)
 
         RecordingDebugLog.updateStatus {
@@ -124,6 +133,7 @@ class RecordingManager(private val context: Context) {
                 muxerStarted = false, muxerFrames = 0, lastNalType = -1,
                 lastError = null, fileSize = 0)
         }
+
 
         val muxer = Mp4Muxer(outputFile)
         mp4Muxer = muxer
@@ -288,91 +298,136 @@ class RecordingManager(private val context: Context) {
 
             if (has3ByteStart) {
                 // Handle 3-byte start code — NAL header at offset+3
-                val nalType = (data[offset + 3].toInt() shr 1) and 0x3F
+                val nalHeaderByte = data[offset + 3].toInt()
+                // H.265 NAL type: bits [9:1] of 16-bit header
+                val nalType265 = (nalHeaderByte shr 1) and 0x3F
+                // H.264 NAL type: lower 5 bits of first byte
+                val nalType264 = nalHeaderByte and 0x1F
+                val nalType = if (codecType == CodecType.H264) nalType264 else nalType265
                 handleNalUnit(data, offset, length, nalType, startCodeLen = 3)
                 return
             }
 
-            // No start code at all — might be raw NAL without start code
-            val nalType = (data[offset].toInt() shr 1) and 0x3F
+            // No start code — try as raw NAL unit (some DJI firmware variants omit them)
+            val nalHeaderByte = data[offset].toInt()
+            val nalType265 = (nalHeaderByte shr 1) and 0x3F
+            val nalType264 = nalHeaderByte and 0x1F
             if (rawFrameCount.get() <= 5) {
-                RecordingDebugLog.log("Trying raw NAL (no start code), type=$nalType")
+                RecordingDebugLog.log("No start code — trying raw NAL. H265 type=$nalType265 H264 type=$nalType264")
             }
-            // Don't process — we need start codes for the muxer
+            // Pass with startCodeLen=0 — the entire buffer including the header byte is the NAL
+            val nalType = if (codecType == CodecType.H264) nalType264 else nalType265
+            handleNalUnit(data, offset, length, nalType, startCodeLen = 0)
             return
         }
 
         // Standard 4-byte start code path
-        val nalType = (data[offset + 4].toInt() shr 1) and 0x3F
+        val nalHeaderByte = data[offset + 4].toInt()
+        // Determine type: H.265 uses bits [9:1] of a 2-byte header; H.264 uses lower 5 bits
+        // Before codec is known, try H.265 first (more common on Mini 4 Pro default settings)
+        val nalType265 = (nalHeaderByte shr 1) and 0x3F
+        val nalType264 = nalHeaderByte and 0x1F
+        val nalType = if (codecType == CodecType.H264) nalType264 else nalType265
         handleNalUnit(data, offset, length, nalType, startCodeLen = 4)
     }
 
     private fun handleNalUnit(data: ByteArray, offset: Int, length: Int, nalType: Int, startCodeLen: Int) {
         val timestampUs = System.nanoTime() / 1000L
-
         RecordingDebugLog.updateStatus { copy(lastNalType = nalType) }
 
         when (nalType) {
-            32 -> { // VPS
+            // H.265 parameter sets
+            32 -> { // VPS — only present in H.265
+                codecType = CodecType.H265
                 vpsData = data.copyOfRange(offset + startCodeLen, offset + length)
-                if (!vpsFound) {
-                    RecordingDebugLog.log("VPS found! size=${length - startCodeLen}")
-                }
+                if (!vpsFound) RecordingDebugLog.log("H265 VPS found! size=${length - startCodeLen}")
                 vpsFound = true
                 RecordingDebugLog.updateStatus { copy(vpsFound = true) }
                 tryConfigureMuxer()
             }
-            33 -> { // SPS
-                spsData = data.copyOfRange(offset + startCodeLen, offset + length)
-                if (!spsFound) {
-                    RecordingDebugLog.log("SPS found! size=${length - startCodeLen}")
+            33 -> { // H.265 SPS
+                if (codecType == CodecType.UNKNOWN) codecType = CodecType.H265
+                if (codecType == CodecType.H265) {
+                    spsData = data.copyOfRange(offset + startCodeLen, offset + length)
+                    if (!spsFound) RecordingDebugLog.log("H265 SPS found! size=${length - startCodeLen}")
+                    spsFound = true
+                    RecordingDebugLog.updateStatus { copy(spsFound = true) }
+                    tryConfigureMuxer()
                 }
-                spsFound = true
-                RecordingDebugLog.updateStatus { copy(spsFound = true) }
-                tryConfigureMuxer()
             }
-            34 -> { // PPS
-                ppsData = data.copyOfRange(offset + startCodeLen, offset + length)
-                if (!ppsFound) {
-                    RecordingDebugLog.log("PPS found! size=${length - startCodeLen}")
+            34 -> { // H.265 PPS
+                if (codecType == CodecType.H265) {
+                    ppsData = data.copyOfRange(offset + startCodeLen, offset + length)
+                    if (!ppsFound) RecordingDebugLog.log("H265 PPS found! size=${length - startCodeLen}")
+                    ppsFound = true
+                    RecordingDebugLog.updateStatus { copy(ppsFound = true) }
+                    tryConfigureMuxer()
                 }
-                ppsFound = true
-                RecordingDebugLog.updateStatus { copy(ppsFound = true) }
-                tryConfigureMuxer()
             }
-            19, 20 -> { // IDR keyframe
+            // H.265 IDR frames
+            19, 20 -> {
                 mp4Muxer?.writeNalUnit(data, offset, length, timestampUs, isKeyFrame = true)
                 val frames = mp4Muxer?.totalFrames ?: 0
-                if (frames <= 1 || frames % 100 == 0L) {
-                    RecordingDebugLog.log("IDR keyframe written, total muxer frames: $frames")
+                if (frames <= 1 || frames % 100 == 0L) RecordingDebugLog.log("H265 IDR written, frames: $frames")
+                RecordingDebugLog.updateStatus { copy(muxerFrames = frames) }
+            }
+            // H.264 parameter sets
+            7 -> { // H.264 SPS
+                codecType = CodecType.H264
+                avcSpsData = data.copyOfRange(offset + startCodeLen, offset + length)
+                if (!avcSpsFound) RecordingDebugLog.log("H264 SPS found! size=${length - startCodeLen}")
+                avcSpsFound = true
+                RecordingDebugLog.updateStatus { copy(spsFound = true) }
+                tryConfigureAvcMuxer()
+            }
+            8 -> { // H.264 PPS
+                if (codecType == CodecType.H264) {
+                    avcPpsData = data.copyOfRange(offset + startCodeLen, offset + length)
+                    if (!avcPpsFound) RecordingDebugLog.log("H264 PPS found! size=${length - startCodeLen}")
+                    avcPpsFound = true
+                    RecordingDebugLog.updateStatus { copy(ppsFound = true) }
+                    tryConfigureAvcMuxer()
                 }
+            }
+            // H.264 IDR keyframe
+            5 -> {
+                mp4Muxer?.writeNalUnit(data, offset, length, timestampUs, isKeyFrame = true)
+                val frames = mp4Muxer?.totalFrames ?: 0
+                if (frames <= 1 || frames % 100 == 0L) RecordingDebugLog.log("H264 IDR written, frames: $frames")
                 RecordingDebugLog.updateStatus { copy(muxerFrames = frames) }
             }
             else -> {
+                // Non-parameter, non-IDR frame (P/B frames etc.)
                 if (mp4Muxer?.isStarted == true) {
                     mp4Muxer?.writeNalUnit(data, offset, length, timestampUs, isKeyFrame = false)
                     val frames = mp4Muxer?.totalFrames ?: 0
-                    if (frames % 300 == 0L) {
-                        RecordingDebugLog.updateStatus { copy(muxerFrames = frames) }
-                    }
+                    if (frames % 300 == 0L) RecordingDebugLog.updateStatus { copy(muxerFrames = frames) }
                 }
             }
         }
     }
 
     private fun tryConfigureMuxer() {
-        val vps = vpsData
-        val sps = spsData
-        val pps = ppsData
+        val vps = vpsData; val sps = spsData; val pps = ppsData
         if (vpsFound && spsFound && ppsFound && vps != null && sps != null && pps != null) {
-            RecordingDebugLog.log("All CSD found! Configuring HEVC muxer: VPS=${vps.size}b SPS=${sps.size}b PPS=${pps.size}b")
+            RecordingDebugLog.log("All H265 CSD found! VPS=${vps.size}b SPS=${sps.size}b PPS=${pps.size}b")
             mp4Muxer?.configureHevcCsd(vps, sps, pps)
             val started = mp4Muxer?.isStarted == true
-            RecordingDebugLog.log("Muxer started: $started")
+            RecordingDebugLog.log("HEVC muxer started: $started")
             RecordingDebugLog.updateStatus { copy(muxerStarted = started) }
-            if (!started) {
-                RecordingDebugLog.log("ERROR: Muxer failed to start after CSD config!")
-            }
+            if (!started) RecordingDebugLog.log("ERROR: HEVC muxer failed to start!")
+        }
+    }
+
+    private fun tryConfigureAvcMuxer() {
+        val sps = avcSpsData; val pps = avcPpsData
+        if (avcSpsFound && avcPpsFound && sps != null && pps != null) {
+            RecordingDebugLog.log("All H264 CSD found! SPS=${sps.size}b PPS=${pps.size}b")
+            mp4Muxer?.configureAvcCsd(sps, pps)
+            val started = mp4Muxer?.isStarted == true
+            RecordingDebugLog.log("AVC muxer started: $started")
+            RecordingDebugLog.updateStatus { copy(muxerStarted = started) }
+            if (!started) RecordingDebugLog.log("ERROR: AVC muxer failed to start!")
         }
     }
 

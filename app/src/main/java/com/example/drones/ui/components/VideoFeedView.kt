@@ -46,6 +46,8 @@ fun VideoFeedView(
     selectedId: Int? = null,
     modelLoaded: Boolean = false,
     framesReceived: Long = 0L,
+    modelErrorText: String? = null,
+    detectionDebugInfo: String = "",
     onObjectTapped: (DetectionResult) -> Unit = {}
 ) {
     var surfaceReady by remember { mutableStateOf(false) }
@@ -187,13 +189,16 @@ fun VideoFeedView(
 
         // Detection status chip — always visible so you can diagnose issues
         if (isProductConnected) {
+            val modelError = (if (!modelLoaded) modelErrorText else null)
             val statusText = when {
+                modelError != null         -> "LOAD FAIL: $modelError"
                 !modelLoaded               -> "MODEL LOADING..."
                 framesReceived == 0L       -> "WAITING FOR FRAMES"
-                detections.isEmpty()       -> "DETECTING... (${framesReceived} frames)"
+                detections.isEmpty()       -> "DETECTING... $detectionDebugInfo"
                 else                       -> "${detections.size} OBJECT${if (detections.size > 1) "S" else ""} FOUND"
             }
             val statusColor = when {
+                modelError != null   -> Color.Red
                 !modelLoaded         -> Color.Yellow
                 framesReceived == 0L -> Color(0xFFFF6D00)  // orange
                 detections.isEmpty() -> Color.White.copy(alpha = 0.6f)

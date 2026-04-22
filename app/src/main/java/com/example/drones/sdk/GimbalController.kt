@@ -39,7 +39,6 @@ object GimbalController {
         durationSec: Double = 0.5,
         onResult: ((Boolean, String?) -> Unit)? = null
     ) {
-        currentPitchEstimate = pitchDegrees
         try {
             val rotation = GimbalAngleRotation().apply {
                 mode = GimbalAngleRotationMode.ABSOLUTE_ANGLE
@@ -54,6 +53,7 @@ object GimbalController {
                 rotation,
                 object : CommonCallbacks.CompletionCallbackWithParam<EmptyMsg> {
                     override fun onSuccess(result: EmptyMsg?) {
+                        currentPitchEstimate = pitchDegrees
                         Log.i(TAG, "Gimbal pitch set to ${pitchDegrees}°")
                         onResult?.invoke(true, null)
                     }

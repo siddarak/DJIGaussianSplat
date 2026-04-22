@@ -50,6 +50,7 @@ class TelemetryManager(
         listenGimbal()
         listenSignal()
         listenForwardObstacle()
+        listenLandingConfirmation()
     }
 
     /**
@@ -174,6 +175,13 @@ class TelemetryManager(
 
     // --- AirLink / Signal ---
 
+    private fun listenLandingConfirmation() = safeSubscribe("landingConfirmation") {
+        val key = KeyTools.createKey(FlightControllerKey.KeyIsLandingConfirmationNeeded)
+        keyManager.listen(key, this) { _, v ->
+            v?.let { onTelemetryUpdate(TelemetryUpdate.LandingConfirmation(it)) }
+        }
+    }
+
     private fun listenSignal() = safeSubscribe("signal") {
         val key = KeyTools.createKey(AirLinkKey.KeyUpLinkQuality)
         keyManager.listen(key, this) { _, v ->
@@ -212,4 +220,5 @@ sealed class TelemetryUpdate {
     data class GimbalAttitude(val pitch: Double, val yaw: Double, val roll: Double) : TelemetryUpdate()
     data class Signal(val quality: Int) : TelemetryUpdate()
     data class ForwardObstacle(val distanceM: Float) : TelemetryUpdate()
+    data class LandingConfirmation(val needed: Boolean) : TelemetryUpdate()
 }
