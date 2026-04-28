@@ -394,8 +394,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         val (cLat, cLon, cAlt) = MissionPlanner.computeCenter(
-            state.latitude, state.longitude, state.altitude,
-            state.heading, sensorDist.toDouble()
+            state.latitude, state.longitude,
+            state.heading, sensorDist.toDouble(), objectHeightM.toDouble()
         )
         val startAngle = MissionPlanner.startAngleDeg(state.heading)
 

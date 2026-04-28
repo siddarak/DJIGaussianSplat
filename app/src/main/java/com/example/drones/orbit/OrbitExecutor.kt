@@ -301,12 +301,17 @@ class OrbitExecutor(
         vNorth: Double, vEast: Double,
         yawDeg: Double, verticalVelocity: Double
     ) {
-        // Hard floor — never command descent below minimum
         val safeVertical = if (getDroneAlt() <= MIN_ALTITUDE_M && verticalVelocity < 0)
             0.0 else verticalVelocity
 
         try {
             val data = VirtualStickFlightControlParam()
+            // Control modes MUST be set on every param — they are not persistent state.
+            // Omitting them resets to SDK defaults (angle/body-frame) and breaks orbit math.
+            data.rollPitchControlMode = RollPitchControlMode.VELOCITY
+            data.rollPitchCoordinateSystem = FlightCoordinateSystem.GROUND
+            data.yawControlMode = YawControlMode.ANGLE
+            data.verticalControlMode = VerticalControlMode.VELOCITY
             data.pitch = vNorth.coerceIn(-MAX_VELOCITY_MS, MAX_VELOCITY_MS)
             data.roll  = vEast.coerceIn(-MAX_VELOCITY_MS, MAX_VELOCITY_MS)
             data.yaw   = yawDeg

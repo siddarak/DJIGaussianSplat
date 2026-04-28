@@ -52,8 +52,9 @@ object MissionPlanner {
             )
         )
 
-        // Ascending rings from lock+step to object top
-        val objectTopAlt = mission.centerAlt + mission.objectHeight
+        // Ascending rings from lock+step to object top.
+        // objectTopAlt is relative to lockAlt — rings must climb objectHeight meters above start.
+        val objectTopAlt = mission.lockAlt + mission.objectHeight
         var alt = mission.lockAlt + mission.altitudeStepM
         var ringNum = 1
         while (alt < objectTopAlt - mission.altitudeStepM * 0.4) {
@@ -110,15 +111,18 @@ object MissionPlanner {
     fun computeCenter(
         droneLat: Double,
         droneLon: Double,
-        droneAlt: Double,
         headingDeg: Double,
-        distanceM: Double
+        distanceM: Double,
+        objectHeightM: Double
     ): Triple<Double, Double, Double> {
         val headingRad = Math.toRadians(headingDeg)
         val dLat = distanceM * cos(headingRad) / METERS_PER_DEGREE_LAT
         val dLon = distanceM * Math.sin(headingRad) /
                 (METERS_PER_DEGREE_LAT * cos(Math.toRadians(droneLat)))
-        return Triple(droneLat + dLat, droneLon + dLon, droneAlt)
+        // centerAlt = half the object height above ground (altitude 0 = takeoff point).
+        // Gimbal pitch is computed relative to this so it actually looks at the object center.
+        val centerAlt = objectHeightM / 2.0
+        return Triple(droneLat + dLat, droneLon + dLon, centerAlt)
     }
 
     /**
