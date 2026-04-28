@@ -1,8 +1,19 @@
+import com.android.build.api.variant.ApplicationAndroidComponentsExtension
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
 }
+
+// Auto version from latest git tag (fallback to "dev" if not in git repo)
+val gitVersion: String = try {
+    val proc = ProcessBuilder("git", "describe", "--tags", "--always", "--dirty")
+        .directory(rootDir)
+        .redirectErrorStream(true)
+        .start()
+    proc.inputStream.bufferedReader().readText().trim().ifEmpty { "dev" }
+} catch (e: Exception) { "dev" }
 
 android {
     namespace = "com.example.drones"
@@ -13,7 +24,7 @@ android {
         minSdk = 24
         targetSdk = 35
         versionCode = 1
-        versionName = "1.0"
+        versionName = gitVersion
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         
@@ -62,6 +73,28 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    // Rename APK with git version + delete old APKs before each build
+    applicationVariants.all {
+        val variant = this
+        outputs.all {
+            (this as com.android.build.gradle.internal.api.BaseVariantOutputImpl)
+                .outputFileName = "drones-${variant.buildType.name}-${gitVersion}.apk"
+        }
+        tasks.named("package${variant.name.replaceFirstChar { it.uppercase() }}").configure {
+            doFirst {
+                val outDir = file("$buildDir/outputs/apk/${variant.buildType.name}")
+                val keepName = "drones-${variant.buildType.name}-${gitVersion}.apk"
+                if (outDir.exists()) {
+                    outDir.listFiles { f -> f.name.endsWith(".apk") && f.name != keepName }
+                        ?.forEach {
+                            println("Deleting old APK: ${it.name}")
+                            it.delete()
+                        }
+                }
+            }
+        }
     }
 }
 
