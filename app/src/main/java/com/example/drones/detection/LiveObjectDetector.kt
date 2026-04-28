@@ -132,30 +132,45 @@ class LiveObjectDetector(
     }
 
     private fun detectOutputLayout(interp: Interpreter): OutputLayout {
-        // EfficientDet-Lite0 TFHub SavedModel → TFLite fixed output order:
-        //   0: detection_boxes   [1, N, 4]  ymin/xmin/ymax/xmax normalized
-        //   1: detection_classes [1, N]     float class indices, 1-indexed (1=person)
-        //   2: detection_scores  [1, N]     float confidence 0-1
-        //   3: num_detections    [1]        float count
         val n = interp.outputTensorCount
+        Log.i(TAG, "Output tensor count: $n")
         for (i in 0 until n) {
             val shape = interp.getOutputTensor(i).shape()
             Log.i(TAG, "  Out[$i] shape=${shape.toList()} dtype=${interp.getOutputTensor(i).dataType()}")
         }
-        val maxDet = if (n > 0) {
-            val s = interp.getOutputTensor(0).shape()
-            if (s.size >= 2) s[s.size - 2] else 25
-        } else 25
+
+        // Identify roles by shape — works for any output count
+        var boxesIdx = -1; var classesIdx = -1; var scoresIdx = -1; var countIdx = -1
+        var maxDet = 25
+        val flatCandidates = mutableListOf<Int>()
+
+        for (i in 0 until n) {
+            val s = interp.getOutputTensor(i).shape()
+            when {
+                s.size >= 3 && s.last() == 4 -> { boxesIdx = i; maxDet = s[s.size - 2] }
+                s.size == 1 || (s.size == 2 && s.last() == 1) -> countIdx = i
+                s.size == 2 -> flatCandidates.add(i)
+            }
+        }
+
+        // EfficientDet standard: first flat = classes, second flat = scores
+        classesIdx = flatCandidates.getOrElse(0) { 1 }
+        scoresIdx  = flatCandidates.getOrElse(1) { 2 }
+        if (boxesIdx == -1) boxesIdx = 0
+        if (countIdx == -1) countIdx = flatCandidates.getOrElse(2) { n - 1 }
+
+        Log.i(TAG, "Layout: boxes=$boxesIdx classes=$classesIdx scores=$scoresIdx count=$countIdx N=$maxDet")
+
         return OutputLayout(
-            boxesIdx   = 0,
-            flat0Idx   = 1,   // classes
-            flat1Idx   = 2,   // scores
-            countIdx   = 3,
+            boxesIdx      = boxesIdx,
+            flat0Idx      = classesIdx,
+            flat1Idx      = scoresIdx,
+            countIdx      = countIdx,
             maxDetections = maxDet,
-            boxesShape = interp.getOutputTensor(0).shape(),
-            flat0Shape = interp.getOutputTensor(1).shape(),
-            flat1Shape = interp.getOutputTensor(2).shape(),
-            countShape = interp.getOutputTensor(3).shape()
+            boxesShape    = interp.getOutputTensor(boxesIdx).shape(),
+            flat0Shape    = interp.getOutputTensor(classesIdx).shape(),
+            flat1Shape    = interp.getOutputTensor(scoresIdx).shape(),
+            countShape    = interp.getOutputTensor(countIdx).shape()
         )
     }
 
