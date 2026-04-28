@@ -72,6 +72,7 @@ class LiveObjectDetector(
     private var inputIsFloat = false
 
     private val running = AtomicBoolean(false)
+    private val inferencing = AtomicBoolean(false)  // drop frame if inference still busy
     private var lastFrameMs = 0L
 
     @Volatile var framesReceived = 0L; private set
@@ -169,17 +170,27 @@ class LiveObjectDetector(
         if (safeEnd <= offset) return@CameraFrameListener
         val dataCopy = frame.copyOfRange(offset, safeEnd)
 
+        // Drop frame if previous inference not done — prevents unbounded queue + OOM
+        if (!inferencing.compareAndSet(false, true)) return@CameraFrameListener
+
         executor.submit {
-            if (!running.get() || interpreter == null) return@submit
+            if (!running.get() || interpreter == null) {
+                inferencing.set(false)
+                return@submit
+            }
             try {
-                val bitmap = nv21ToBitmap(dataCopy, width, height) ?: return@submit
-                val results = runInference(bitmap, width, height)
-                bitmap.recycle()
-                inferencesRun++
-                onResults(results)
+                val bitmap = nv21ToBitmap(dataCopy, width, height)
+                if (bitmap != null) {
+                    val results = runInference(bitmap, width, height)
+                    bitmap.recycle()
+                    inferencesRun++
+                    onResults(results)
+                }
             } catch (e: Exception) {
                 Log.w(TAG, "Inference error: ${e.message}")
                 debugInfo = "ERR: ${e.message?.take(80)}"
+            } finally {
+                inferencing.set(false)
             }
         }
     }
