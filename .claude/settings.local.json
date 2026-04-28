@@ -4,7 +4,12 @@
       "WebSearch",
       "WebFetch(domain:developer.dji.com)",
       "WebFetch(domain:medium.com)",
-      "Bash(./gradlew build:*)"
+      "Bash(./gradlew build:*)",
+      "Bash(rm -rf ~/.gradle/wrapper/dists/gradle-7.0.1-bin)",
+      "Bash(rm -rf ~/.gradle/wrapper/dists/gradle-8.0.0-bin)",
+      "Bash(rm -rf ~/.gradle/wrapper/dists/gradle-8.4-bin)",
+      "Bash(rm -rf ~/.gradle/wrapper/dists/gradle-8.7.0-bin)",
+      "Bash(rm -rf ~/.gradle/wrapper/dists/gradle-9.1.0-bin)"
     ]
   }
 }

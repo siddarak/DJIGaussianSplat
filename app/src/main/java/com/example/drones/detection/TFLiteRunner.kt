@@ -59,7 +59,11 @@ object TFLiteRunner {
         val rawCount = countFlat.getOrElse(0) { 0f }
         val N = info.maxDetections
         val topScore = (0 until minOf(N, scoreFlat.size)).maxOfOrNull { scoreFlat[it] } ?: 0f
-        val debugLine = "${bitmap.width}x${bitmap.height} cnt=%.0f top=%.2f".format(rawCount, topScore)
+        val debugLine = "${bitmap.width}x${bitmap.height} cnt=%.0f top=%.2f s0=%.2f s1=%.2f c0=%.0f c1=%.0f b0=%.2f"
+            .format(rawCount, topScore,
+                scoreFlat.getOrElse(0) { 0f }, scoreFlat.getOrElse(1) { 0f },
+                classFlat.getOrElse(0) { 0f }, classFlat.getOrElse(1) { 0f },
+                boxesFlat.getOrElse(0) { 0f })
 
         val results = mutableListOf<DetectionResult>()
         for (i in 0 until minOf(N, scoreFlat.size)) {
