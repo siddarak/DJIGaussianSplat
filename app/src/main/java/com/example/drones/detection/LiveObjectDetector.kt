@@ -61,7 +61,12 @@ class LiveObjectDetector(
         val flat0Idx: Int,
         val flat1Idx: Int,
         val countIdx: Int,
-        val maxDetections: Int
+        val maxDetections: Int,
+        // Exact shapes from interpreter — used to allocate correctly-sized buffers
+        val boxesShape: IntArray,
+        val flat0Shape: IntArray,
+        val flat1Shape: IntArray,
+        val countShape: IntArray
     )
 
     private val executor = Executors.newSingleThreadExecutor { r ->
@@ -148,7 +153,13 @@ class LiveObjectDetector(
         if (countIdx == -1) countIdx = (0 until n).firstOrNull { it != boxesIdx && it !in flatCandidates } ?: 3
         val flat0 = flatCandidates.getOrElse(0) { (boxesIdx + 1) % n }
         val flat1 = flatCandidates.getOrElse(1) { (boxesIdx + 2) % n }
-        return OutputLayout(boxesIdx, flat0, flat1, countIdx, maxDet)
+        return OutputLayout(
+            boxesIdx, flat0, flat1, countIdx, maxDet,
+            boxesShape  = interp.getOutputTensor(boxesIdx).shape(),
+            flat0Shape  = interp.getOutputTensor(flat0).shape(),
+            flat1Shape  = interp.getOutputTensor(flat1).shape(),
+            countShape  = interp.getOutputTensor(countIdx).shape()
+        )
     }
 
     private val frameListener = ICameraStreamManager.CameraFrameListener {
@@ -226,58 +237,61 @@ class LiveObjectDetector(
         inputBuffer.rewind()
 
         val N = lay.maxDetections
-        val outBoxes = Array(1) { Array(N) { FloatArray(4) } }
-        val outFlat0 = Array(1) { FloatArray(N) }
-        val outFlat1 = Array(1) { FloatArray(N) }
-        val outCount = FloatArray(1)
+        // ByteBuffer outputs: TFLite writes raw float32 bytes regardless of tensor shape.
+        // This avoids "cannot copy from TFLite tensor" caused by shape mismatch on stateful models.
+        val outBoxesBuf = allocBuf(lay.boxesShape)
+        val outFlat0Buf = allocBuf(lay.flat0Shape)
+        val outFlat1Buf = allocBuf(lay.flat1Shape)
+        val outCountBuf = allocBuf(lay.countShape)
 
         val outputs = mutableMapOf<Int, Any>(
-            lay.boxesIdx to outBoxes,
-            lay.countIdx to outCount,
-            lay.flat0Idx to outFlat0,
-            lay.flat1Idx to outFlat1
+            lay.boxesIdx to outBoxesBuf,
+            lay.countIdx to outCountBuf,
+            lay.flat0Idx to outFlat0Buf,
+            lay.flat1Idx to outFlat1Buf
         )
         interp.runForMultipleInputsOutputs(arrayOf(inputBuffer), outputs)
 
-        val rawCount = outCount[0]
+        // Read back as flat FloatArrays
+        val boxesFlat = outBoxesBuf.toFloats()   // [N*4]: ymin,xmin,ymax,xmax per detection
+        val flat0     = outFlat0Buf.toFloats()
+        val flat1     = outFlat1Buf.toFloats()
+        val countFlat = outCountBuf.toFloats()
+
+        val rawCount = countFlat.getOrElse(0) { 0f }
         val count = rawCount.toInt().coerceIn(0, N)
 
-        // Resolve scores vs classes by value range — scores are [0,1], class indices are [0,79].
-        // Check max across min(count,10) slots but fall back to full N scan if count=0.
-        val scanN = if (count > 0) count.coerceAtMost(10) else N
-        val maxFlat0 = outFlat0[0].take(scanN).maxOrNull() ?: 0f
-        val maxFlat1 = outFlat1[0].take(scanN).maxOrNull() ?: 0f
+        val scanN = if (count > 0) count.coerceAtMost(10) else N.coerceAtMost(flat0.size)
+        val maxFlat0 = flat0.take(scanN).maxOrNull() ?: 0f
+        val maxFlat1 = flat1.take(scanN).maxOrNull() ?: 0f
 
-        // Whichever flat tensor has max > 1.5 is class indices; the other is scores.
         val (scores, classes) = when {
-            maxFlat0 > 1.5f -> Pair(outFlat1[0], outFlat0[0])
-            maxFlat1 > 1.5f -> Pair(outFlat0[0], outFlat1[0])
-            else -> Pair(outFlat1[0], outFlat0[0])  // default: flat1=scores (TFHub order)
+            maxFlat0 > 1.5f -> Pair(flat1, flat0)
+            maxFlat1 > 1.5f -> Pair(flat0, flat1)
+            else -> Pair(flat1, flat0)
         }
 
-        // Scan ALL N slots — don't trust count alone.
-        // Models sometimes return count=0 even with valid detections due to quantization.
-        val topScore = (0 until N).maxOfOrNull { scores[it] } ?: 0f
+        val topScore = (0 until minOf(N, scores.size)).maxOfOrNull { scores[it] } ?: 0f
         debugInfo = "${frameW}x${frameH} cnt=%.0f top=%.2f f0=%.2f f1=%.2f".format(
             rawCount, topScore, maxFlat0, maxFlat1
         )
 
         val results = mutableListOf<DetectionResult>()
-        for (i in 0 until N) {
+        for (i in 0 until minOf(N, scores.size)) {
             val score = scores[i]
             if (score < SCORE_THRESHOLD) continue
             if (results.size >= MAX_RESULTS) break
 
-            val classRaw = classes[i]
-            // Handle both 0-indexed (MediaPipe) and 1-indexed (TFHub) COCO labels
+            val classRaw = if (i < classes.size) classes[i] else 0f
             val classIdx = (classRaw.toInt() - 1).coerceAtLeast(0).coerceAtMost(COCO_LABELS.size - 1)
-            val box = outBoxes[0][i]
 
-            // EfficientDet boxes: [ymin, xmin, ymax, xmax] normalized
-            val ymin = box[0].coerceIn(0f, 1f)
-            val xmin = box[1].coerceIn(0f, 1f)
-            val ymax = box[2].coerceIn(0f, 1f)
-            val xmax = box[3].coerceIn(0f, 1f)
+            // boxes flat layout: i*4 = ymin, i*4+1 = xmin, i*4+2 = ymax, i*4+3 = xmax
+            val base = i * 4
+            if (base + 3 >= boxesFlat.size) continue
+            val ymin = boxesFlat[base].coerceIn(0f, 1f)
+            val xmin = boxesFlat[base + 1].coerceIn(0f, 1f)
+            val ymax = boxesFlat[base + 2].coerceIn(0f, 1f)
+            val xmax = boxesFlat[base + 3].coerceIn(0f, 1f)
 
             if (xmax <= xmin || ymax <= ymin) continue
 
@@ -293,6 +307,18 @@ class LiveObjectDetector(
             Log.i(TAG, "Detected: ${results.map { "${it.label}@${"%.0f".format(it.confidence * 100)}%" }}")
         }
         return results
+    }
+
+    private fun allocBuf(shape: IntArray): ByteBuffer {
+        val n = shape.fold(1) { acc, d -> acc * d }
+        return ByteBuffer.allocateDirect(n * 4).also { it.order(ByteOrder.nativeOrder()) }
+    }
+
+    private fun ByteBuffer.toFloats(): FloatArray {
+        rewind()
+        val fa = FloatArray(capacity() / 4)
+        asFloatBuffer().get(fa)
+        return fa
     }
 
     private fun nv21ToBitmap(data: ByteArray, width: Int, height: Int): Bitmap? {
