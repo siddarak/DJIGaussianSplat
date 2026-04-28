@@ -265,10 +265,12 @@ class LiveObjectDetector(
         val maxFlat0 = flat0.take(scanN).maxOrNull() ?: 0f
         val maxFlat1 = flat1.take(scanN).maxOrNull() ?: 0f
 
+        // Class indices are integers 0-79; scores are 0-1.
+        // Threshold 1.05 catches class indices even when max detection is class 1 (bicycle).
         val (scores, classes) = when {
-            maxFlat0 > 1.5f -> Pair(flat1, flat0)
-            maxFlat1 > 1.5f -> Pair(flat0, flat1)
-            else -> Pair(flat1, flat0)
+            maxFlat0 > 1.05f -> Pair(flat1, flat0)
+            maxFlat1 > 1.05f -> Pair(flat0, flat1)
+            else -> Pair(flat0, flat1)  // both look like scores — flat0 first
         }
 
         val topScore = (0 until minOf(N, scores.size)).maxOfOrNull { scores[it] } ?: 0f
