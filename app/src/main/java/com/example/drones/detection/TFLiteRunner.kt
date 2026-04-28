@@ -17,23 +17,6 @@ import java.nio.ByteOrder
 object TFLiteRunner {
 
     private const val TAG = "TFLiteRunner"
-    private const val SCORE_THRESHOLD = 0.05f
-    private const val MAX_RESULTS = 5
-
-    private val COCO_LABELS = arrayOf(
-        "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck",
-        "boat", "traffic light", "fire hydrant", "stop sign", "parking meter", "bench",
-        "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra",
-        "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee",
-        "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove",
-        "skateboard", "surfboard", "tennis racket", "bottle", "wine glass", "cup",
-        "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange",
-        "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair", "couch",
-        "potted plant", "bed", "dining table", "toilet", "tv", "laptop", "mouse",
-        "remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink",
-        "refrigerator", "book", "clock", "vase", "scissors", "teddy bear",
-        "hair drier", "toothbrush"
-    )
 
     /**
      * Run inference on [bitmap]. Returns detections above threshold.
@@ -81,11 +64,11 @@ object TFLiteRunner {
         val results = mutableListOf<DetectionResult>()
         for (i in 0 until minOf(N, scoreFlat.size)) {
             val score = scoreFlat[i]
-            if (score < SCORE_THRESHOLD) continue
-            if (results.size >= MAX_RESULTS) break
+            if (score < DetectorConfig.SCORE_THRESHOLD) continue
+            if (results.size >= DetectorConfig.MAX_RESULTS) break
 
             val classRaw = classFlat.getOrElse(i) { 0f }
-            val classIdx = (classRaw.toInt() - 1).coerceIn(0, COCO_LABELS.size - 1)
+            val classIdx = (classRaw.toInt() - 1).coerceIn(0, DetectorConfig.LABELS.size - 1)
 
             val base = i * 4
             if (base + 3 >= boxesFlat.size) continue
@@ -96,7 +79,7 @@ object TFLiteRunner {
             if (xmax <= xmin || ymax <= ymin) continue
 
             results.add(DetectionResult(
-                label      = COCO_LABELS[classIdx],
+                label      = DetectorConfig.LABELS[classIdx],
                 confidence = score,
                 boxNorm    = RectF(xmin, ymin, xmax, ymax),
                 trackId    = i

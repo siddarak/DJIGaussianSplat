@@ -21,7 +21,6 @@ class LiveObjectDetector(
 ) {
     companion object {
         private const val TAG = "LiveObjectDetector"
-        private const val MODEL_FILE = "efficientdet_lite0.tflite"
         private const val MAX_FPS = 5
         private const val FRAME_INTERVAL_MS = 1000L / MAX_FPS
     }
@@ -67,7 +66,7 @@ class LiveObjectDetector(
 
     private fun loadModel() {
         try {
-            val afd = context.assets.openFd(MODEL_FILE)
+            val afd = context.assets.openFd(DetectorConfig.MODEL_FILE)
             val mapped = FileInputStream(afd.fileDescriptor).channel
                 .map(FileChannel.MapMode.READ_ONLY, afd.startOffset, afd.declaredLength)
             val interp = Interpreter(mapped, Interpreter.Options().apply { numThreads = 4 })
