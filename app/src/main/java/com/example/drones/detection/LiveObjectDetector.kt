@@ -132,33 +132,30 @@ class LiveObjectDetector(
     }
 
     private fun detectOutputLayout(interp: Interpreter): OutputLayout {
+        // EfficientDet-Lite0 TFHub SavedModel → TFLite fixed output order:
+        //   0: detection_boxes   [1, N, 4]  ymin/xmin/ymax/xmax normalized
+        //   1: detection_classes [1, N]     float class indices, 1-indexed (1=person)
+        //   2: detection_scores  [1, N]     float confidence 0-1
+        //   3: num_detections    [1]        float count
         val n = interp.outputTensorCount
-        var boxesIdx = 0
-        var countIdx = -1
-        val flatCandidates = mutableListOf<Int>()
-        var maxDet = 25
-
         for (i in 0 until n) {
             val shape = interp.getOutputTensor(i).shape()
-            val dtype = interp.getOutputTensor(i).dataType()
-            Log.i(TAG, "  Out[$i] shape=${shape.toList()} dtype=$dtype")
-            when {
-                shape.size >= 3 && shape.last() == 4 -> { boxesIdx = i; maxDet = shape[shape.size - 2] }
-                shape.size == 1 -> countIdx = i
-                shape.size == 2 && shape[1] == 1 -> countIdx = i  // [1,1] count
-                shape.size == 2 -> flatCandidates.add(i)
-            }
+            Log.i(TAG, "  Out[$i] shape=${shape.toList()} dtype=${interp.getOutputTensor(i).dataType()}")
         }
-
-        if (countIdx == -1) countIdx = (0 until n).firstOrNull { it != boxesIdx && it !in flatCandidates } ?: 3
-        val flat0 = flatCandidates.getOrElse(0) { (boxesIdx + 1) % n }
-        val flat1 = flatCandidates.getOrElse(1) { (boxesIdx + 2) % n }
+        val maxDet = if (n > 0) {
+            val s = interp.getOutputTensor(0).shape()
+            if (s.size >= 2) s[s.size - 2] else 25
+        } else 25
         return OutputLayout(
-            boxesIdx, flat0, flat1, countIdx, maxDet,
-            boxesShape  = interp.getOutputTensor(boxesIdx).shape(),
-            flat0Shape  = interp.getOutputTensor(flat0).shape(),
-            flat1Shape  = interp.getOutputTensor(flat1).shape(),
-            countShape  = interp.getOutputTensor(countIdx).shape()
+            boxesIdx   = 0,
+            flat0Idx   = 1,   // classes
+            flat1Idx   = 2,   // scores
+            countIdx   = 3,
+            maxDetections = maxDet,
+            boxesShape = interp.getOutputTensor(0).shape(),
+            flat0Shape = interp.getOutputTensor(1).shape(),
+            flat1Shape = interp.getOutputTensor(2).shape(),
+            countShape = interp.getOutputTensor(3).shape()
         )
     }
 
@@ -261,22 +258,12 @@ class LiveObjectDetector(
         val rawCount = countFlat.getOrElse(0) { 0f }
         val count = rawCount.toInt().coerceIn(0, N)
 
-        val scanN = if (count > 0) count.coerceAtMost(10) else N.coerceAtMost(flat0.size)
-        val maxFlat0 = flat0.take(scanN).maxOrNull() ?: 0f
-        val maxFlat1 = flat1.take(scanN).maxOrNull() ?: 0f
-
-        // Class indices are integers 0-79; scores are 0-1.
-        // Threshold 1.05 catches class indices even when max detection is class 1 (bicycle).
-        val (scores, classes) = when {
-            maxFlat0 > 1.05f -> Pair(flat1, flat0)
-            maxFlat1 > 1.05f -> Pair(flat0, flat1)
-            else -> Pair(flat0, flat1)  // both look like scores — flat0 first
-        }
+        // flat0 = classes (1-indexed), flat1 = scores (0-1) — hardcoded for TFHub EfficientDet-Lite0
+        val scores  = flat1
+        val classes = flat0
 
         val topScore = (0 until minOf(N, scores.size)).maxOfOrNull { scores[it] } ?: 0f
-        debugInfo = "${frameW}x${frameH} cnt=%.0f top=%.2f f0=%.2f f1=%.2f".format(
-            rawCount, topScore, maxFlat0, maxFlat1
-        )
+        debugInfo = "${frameW}x${frameH} cnt=%.0f top=%.2f".format(rawCount, topScore)
 
         val results = mutableListOf<DetectionResult>()
         for (i in 0 until minOf(N, scores.size)) {
