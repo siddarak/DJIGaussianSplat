@@ -9,10 +9,12 @@ import com.example.drones.data.DroneState
 import com.example.drones.data.SdkConnectionState
 import com.example.drones.detection.DetectionResult
 import com.example.drones.detection.LiveObjectDetector
+import com.example.drones.orbit.AutoYaw
 import com.example.drones.orbit.MissionPlanner
 import com.example.drones.orbit.OrbitExecutor
 import com.example.drones.orbit.OrbitMission
 import com.example.drones.orbit.OrbitState
+import com.example.drones.orbit.VisualOrbitExecutor
 import com.example.drones.recording.RecordingManager
 import com.example.drones.sdk.DjiSdkManager
 import com.example.drones.sdk.FlightController
@@ -373,8 +375,69 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // --- Detection + Orbit ---
 
     fun selectDetection(det: DetectionResult) {
-        _droneState.update { it.copy(selectedDetectionId = det.trackId) }
+        _droneState.update { it.copy(
+            selectedDetectionId = det.trackId,
+            selectedDetectionLabel = det.label,
+            selectedDetectionBox = det.boxNorm
+        )}
         Log.i(TAG, "Selected: ${det.label} (${det.trackId}), box=${det.boxNorm}")
+
+        // Auto-yaw: rotate drone to face the tapped object (only if flying).
+        if (_droneState.value.isFlying) {
+            val xCenter = (det.boxNorm.left + det.boxNorm.right) / 2f
+            AutoYaw.yawToBox(
+                boxCenterXNorm = xCenter,
+                currentHeading = _droneState.value.heading,
+                getCurrentHeading = { _droneState.value.heading },
+                onComplete = { achieved ->
+                    Log.i(TAG, "AutoYaw complete: heading=$achieved°")
+                }
+            )
+        }
+    }
+
+    /**
+     * Tap-to-orbit: auto-yaw to face the tapped object, then auto-lock + start orbit.
+     * Picks GPS orbit (outdoor) or visual orbit (indoor, sat=0).
+     */
+    fun tapToOrbit(det: DetectionResult, objectHeightM: Float = 1.0f) {
+        if (!_droneState.value.isFlying) {
+            _droneState.update { it.copy(flightActionError = "Drone must be flying first") }
+            scheduleErrorClear()
+            return
+        }
+        selectDetection(det)
+        val useVisual = _droneState.value.satelliteCount < 6
+        viewModelScope.launch {
+            // Wait for auto-yaw to settle
+            delay(2500)
+            if (useVisual) startVisualOrbit(det, objectHeightM)
+            else lockOrbitTarget(objectHeightM)
+        }
+    }
+
+    private var visualOrbit: VisualOrbitExecutor? = null
+
+    private fun startVisualOrbit(det: DetectionResult, objectHeightM: Float) {
+        startVisualOrbitFromSelected(det.label, det.boxNorm, objectHeightM)
+    }
+
+    private fun startVisualOrbitFromSelected(label: String, box: android.graphics.RectF, objectHeightM: Float) {
+        Log.i(TAG, "Starting visual orbit on '$label' (sat=${_droneState.value.satelliteCount})")
+        _droneState.update { it.copy(orbitState = OrbitState.Arming) }
+        visualOrbit?.abort()
+        visualOrbit = VisualOrbitExecutor(
+            targetLabel = label,
+            initialBox = box,
+            getDetections = { _droneState.value.detections },
+            onState = { st -> _droneState.update { it.copy(orbitState = st) } }
+        )
+        visualOrbit?.start()
+    }
+
+    fun abortVisualOrbit() {
+        visualOrbit?.abort()
+        visualOrbit = null
     }
 
     /**
@@ -383,8 +446,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun lockOrbitTarget(objectHeightM: Float = 1.0f) {
         val state = _droneState.value
-        val sensorDist = state.forwardObstacleDistM
 
+        // No GPS → fall back to visual orbit using selected detection
+        if (state.satelliteCount < 6) {
+            val selectedBox = state.selectedDetectionBox
+            val selectedLabel = state.selectedDetectionLabel
+            if (selectedBox == null || selectedLabel == null) {
+                _droneState.update { it.copy(flightActionError = "Tap an object first (no GPS)") }
+                scheduleErrorClear()
+                return
+            }
+            startVisualOrbitFromSelected(selectedLabel, selectedBox, objectHeightM)
+            return
+        }
+
+        val sensorDist = state.forwardObstacleDistM
         if (sensorDist < 0.38f || sensorDist > 20f) {
             _droneState.update { it.copy(flightActionError =
                 if (sensorDist < 0.38f) "Too close — move back (min 0.4m)"
@@ -440,6 +516,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun abortOrbit() {
         orbitExecutor?.abort()
         orbitExecutor = null
+        visualOrbit?.abort()
+        visualOrbit = null
+        AutoYaw.cancel()
         _droneState.update { it.copy(orbitState = OrbitState.Idle) }
     }
 
