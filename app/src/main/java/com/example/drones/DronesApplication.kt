@@ -5,6 +5,7 @@ import android.content.Context
 import android.util.Log
 import com.example.drones.sdk.DjiSdkManager
 import com.example.drones.sdk.FlightController
+import com.example.drones.util.FileLogger
 
 class DronesApplication : Application() {
 
@@ -23,6 +24,8 @@ class DronesApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        FileLogger.init(this)
+        FileLogger.write("App onCreate")
         DjiSdkManager.init(this)
         installCrashSafetyHandler()
     }

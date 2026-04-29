@@ -1,6 +1,7 @@
 package com.example.drones.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +18,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import com.example.drones.util.FileBrowser
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -28,6 +31,7 @@ import com.example.drones.data.DroneState
  */
 @Composable
 fun TopHudBar(state: DroneState) {
+    val ctx = LocalContext.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -62,6 +66,27 @@ fun TopHudBar(state: DroneState) {
                     state.isFlying -> Color.Cyan
                     else -> Color.White
                 }
+            )
+        }
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        // FILES button — opens drone folder, copies path to clipboard, dumps logcat
+        Box(
+            modifier = Modifier
+                .clickable { FileBrowser.openDroneFolder(ctx) }
+                .background(
+                    Color(0xFF1565C0).copy(alpha = 0.85f),
+                    RoundedCornerShape(4.dp)
+                )
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+        ) {
+            Text(
+                text = "FILES",
+                color = Color.White,
+                fontSize = 10.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold
             )
         }
 

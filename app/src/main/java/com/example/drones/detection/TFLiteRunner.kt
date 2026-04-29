@@ -34,6 +34,13 @@ object TFLiteRunner {
         scaled.getPixels(pixels, 0, size, 0, 0, size, size)
         scaled.recycle()
 
+        // Diagnostic: mean pixel brightness — if 0, frames are black
+        var sumLum = 0L
+        for (px in pixels) {
+            sumLum += ((px shr 16) and 0xFF) + ((px shr 8) and 0xFF) + (px and 0xFF)
+        }
+        val meanLum = sumLum / (pixels.size.toLong() * 3)
+
         val inputBuffer = buildInputBuffer(pixels, info.inputIsFloat, size)
 
         // Allocate output buffers exactly sized to each tensor's total elements
@@ -49,6 +56,7 @@ object TFLiteRunner {
             info.countIdx   to outCount
         )
 
+        try { interp.allocateTensors() } catch (_: Exception) {}
         interp.runForMultipleInputsOutputs(arrayOf(inputBuffer), outputs)
 
         val boxesFlat  = outBoxes.floats()
@@ -59,7 +67,7 @@ object TFLiteRunner {
         val rawCount = countFlat.getOrElse(0) { 0f }
         val N = info.maxDetections
         val topScore = (0 until minOf(N, scoreFlat.size)).maxOfOrNull { scoreFlat[it] } ?: 0f
-        val debugLine = "${bitmap.width}x${bitmap.height} cnt=%.0f top=%.2f s0=%.2f s1=%.2f c0=%.0f c1=%.0f b0=%.2f"
+        val debugLine = "${bitmap.width}x${bitmap.height} lum=$meanLum cnt=%.0f top=%.2f s0=%.2f s1=%.2f c0=%.0f c1=%.0f b0=%.2f"
             .format(rawCount, topScore,
                 scoreFlat.getOrElse(0) { 0f }, scoreFlat.getOrElse(1) { 0f },
                 classFlat.getOrElse(0) { 0f }, classFlat.getOrElse(1) { 0f },

@@ -3,6 +3,7 @@ package com.example.drones.detection
 import android.content.Context
 import android.util.Log
 import com.example.drones.sdk.VideoStreamManager
+import com.example.drones.util.FileLogger
 import dji.v5.manager.interfaces.ICameraStreamManager
 import org.tensorflow.lite.Interpreter
 import java.io.FileInputStream
@@ -79,6 +80,9 @@ class LiveObjectDetector(
             modelLoaded = true
             modelLoadError = null
             Log.i(TAG, "Model ready: ${info.summary}")
+            FileLogger.write("MODEL LAYOUT: ${info.summary}")
+            FileLogger.write("Output shapes: ${info.outputShapes}")
+            FileLogger.write("inputIsFloat=${info.inputIsFloat} inputSize=${info.inputSize}")
         } catch (e: Exception) {
             modelLoadError = e.message?.take(120) ?: "Unknown error"
             Log.e(TAG, "Model load FAILED: ${e.message}")
@@ -118,8 +122,9 @@ class LiveObjectDetector(
                 if (bitmap != null) {
                     val (results, debug) = TFLiteRunner.run(bitmap, interp, info)
                     bitmap.recycle()
-                    debugInfo = debug
+                    debugInfo = "${info.summary} | $debug"
                     inferencesRun++
+                    if (inferencesRun % 10L == 0L) FileLogger.write("INF #$inferencesRun: $debug")
                     onResults(results)
                 }
             } catch (e: Exception) {
