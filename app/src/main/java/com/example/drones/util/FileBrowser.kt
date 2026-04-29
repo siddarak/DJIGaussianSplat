@@ -24,6 +24,14 @@ object FileBrowser {
         val logFile = File(FileLogger.logPath())
         val path = logFile.absolutePath
 
+        // Publish a copy to public Documents/Drones/ so Samsung Files / Drive picker can see it
+        if (logFile.exists()) {
+            val published = MediaPublisher.publishLog(context, logFile)
+            if (published != null) {
+                Toast.makeText(context, "Log copied to Documents/Drones/", Toast.LENGTH_SHORT).show()
+            }
+        }
+
         // Always copy path to clipboard as fallback
         try {
             val clip = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager

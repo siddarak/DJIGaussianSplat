@@ -173,13 +173,14 @@ class Mp4Muxer(
         }
     }
 
-    /** Finalize and close the MP4. No frames can be written after this. */
+    /** Finalize and close the MP4. No frames can be written after this.
+     *  If no frames were written, the file is corrupt — delete it. */
     fun stop() {
         synchronized(muxerLock) {
-            val activeMuxer = muxer ?: return
+            val activeMuxer = muxer
             try {
-                if (muxerStarted) activeMuxer.stop()
-                activeMuxer.release()
+                if (activeMuxer != null && muxerStarted) activeMuxer.stop()
+                activeMuxer?.release()
                 Log.i(TAG, "Muxer stopped. Frames: $frameCount, File: ${outputFile.name}")
             } catch (e: Exception) {
                 Log.e(TAG, "Error stopping muxer: ${e.message}")
@@ -187,6 +188,10 @@ class Mp4Muxer(
                 muxer = null
                 muxerStarted = false
                 videoTrackIndex = -1
+            }
+            if (frameCount == 0L && outputFile.exists()) {
+                Log.w(TAG, "Empty recording — deleting ${outputFile.name}")
+                outputFile.delete()
             }
         }
     }
