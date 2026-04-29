@@ -4,55 +4,59 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
-import android.provider.DocumentsContract
 import android.util.Log
 import android.widget.Toast
+import androidx.core.content.FileProvider
+import java.io.File
 
 /**
- * Best-effort opener for the app's externalFilesDir in the Files app.
- * Always copies path to clipboard as fallback (Android 11+ blocks
- * direct browse of Android/data on many devices).
+ * Android 11+ blocks /Android/data from third-party file managers, so we use
+ * FileProvider + ACTION_SEND to push the log straight into a share sheet —
+ * user picks Drive / Gmail / etc. Works on every Android version.
  */
 object FileBrowser {
     private const val TAG = "FileBrowser"
 
     fun openDroneFolder(context: Context) {
-        val path = FileLogger.rootPath()
-
-        // Always copy path to clipboard so user can paste in any file picker
-        try {
-            val clip = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            clip.setPrimaryClip(ClipData.newPlainText("drone path", path))
-        } catch (_: Exception) {}
-
-        // Dump logcat so the latest log is fresh on disk
+        // Make sure latest logcat is flushed to disk first
         FileLogger.dumpLogcat()
 
-        Toast.makeText(context, "Path copied: $path", Toast.LENGTH_LONG).show()
+        val logFile = File(FileLogger.logPath())
+        val path = logFile.absolutePath
 
-        // Try to launch Files app on the folder. Often blocked on /Android/data — chain attempts.
-        val pkg = context.packageName
-        val docUri = Uri.parse(
-            "content://com.android.externalstorage.documents/document/primary%3AAndroid%2Fdata%2F$pkg%2Ffiles"
-        )
+        // Always copy path to clipboard as fallback
+        try {
+            val clip = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clip.setPrimaryClip(ClipData.newPlainText("drone log path", path))
+        } catch (_: Exception) {}
 
-        val attempts = listOf(
-            Intent(Intent.ACTION_VIEW).setDataAndType(docUri, DocumentsContract.Document.MIME_TYPE_DIR)
-                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),
-            Intent(Intent.ACTION_VIEW).setDataAndType(docUri, "*/*"),
-            Intent("android.intent.action.SHOW_APP_INFO")
-        )
-
-        for (intent in attempts) {
-            try {
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                context.startActivity(intent)
-                return
-            } catch (e: Exception) {
-                Log.w(TAG, "intent failed: ${e.message}")
-            }
+        if (!logFile.exists()) {
+            Toast.makeText(context, "No log yet — start detection first", Toast.LENGTH_LONG).show()
+            return
         }
-        Toast.makeText(context, "Open Files app manually → paste path", Toast.LENGTH_LONG).show()
+
+        try {
+            val uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                logFile
+            )
+            val share = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_SUBJECT, "Drone log ${logFile.name}")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            val chooser = Intent.createChooser(share, "Send drone log to…")
+            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(chooser)
+        } catch (e: Exception) {
+            Log.e(TAG, "Share failed: ${e.message}", e)
+            Toast.makeText(
+                context,
+                "Share failed: ${e.message}\nPath copied: $path",
+                Toast.LENGTH_LONG
+            ).show()
+        }
     }
 }

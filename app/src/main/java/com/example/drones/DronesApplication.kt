@@ -24,8 +24,9 @@ class DronesApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        FileLogger.init(this)
-        FileLogger.write("App onCreate")
+        try { FileLogger.init(this) } catch (e: Exception) {
+            Log.e(TAG, "FileLogger init failed (non-fatal): ${e.message}")
+        }
         DjiSdkManager.init(this)
         installCrashSafetyHandler()
     }

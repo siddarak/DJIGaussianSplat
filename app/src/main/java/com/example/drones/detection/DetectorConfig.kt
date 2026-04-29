@@ -4,8 +4,10 @@ package com.example.drones.detection
  * ALL model-specific configuration lives here.
  * Swapping the model = only edit this file.
  *
- * Current model: EfficientDet-Lite0, COCO 80-class, float32, 320x320
- * Source: TFHub SavedModel → TFLite (13 MB)
+ * Current model: EfficientDet-Lite0 with TFLite_Detection_PostProcess (NMS embedded)
+ * COCO 80-class, uint8 quantized, 320x320, 4 outputs (boxes/classes/scores/count)
+ * Source: TFLite Task Library hosted (4.4 MB)
+ * URL: https://storage.googleapis.com/download.tensorflow.org/models/tflite/task_library/object_detection/android/lite-model_efficientdet_lite0_detection_metadata_1.tflite
  */
 object DetectorConfig {
 
@@ -15,8 +17,8 @@ object DetectorConfig {
 
     enum class Normalization { ZERO_TO_ONE, NEG_ONE_TO_ONE, RAW_BYTES }
 
-    // float32 TFHub EfficientDet-Lite0 uses [0, 1]
-    val NORMALIZATION = Normalization.ZERO_TO_ONE
+    // uint8 quantized model takes raw bytes [0, 255]
+    val NORMALIZATION = Normalization.RAW_BYTES
 
     // COCO 80-class labels, 0-indexed (model outputs 1-indexed — TFLiteRunner subtracts 1)
     val LABELS = arrayOf(
