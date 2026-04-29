@@ -1,6 +1,7 @@
 package com.example.drones.sdk
 
 import android.util.Log
+import com.example.drones.util.FileLogger
 import dji.sdk.keyvalue.key.AirLinkKey
 import dji.sdk.keyvalue.key.BatteryKey
 import dji.sdk.keyvalue.key.FlightControllerKey
@@ -77,8 +78,21 @@ class TelemetryManager(
 
     private fun listenLocation() = safeSubscribe("location") {
         val key = KeyTools.createKey(FlightControllerKey.KeyAircraftLocation3D)
+        // Seed initial value (listen only fires on CHANGES — drone may already have GPS lock)
+        try {
+            val current: LocationCoordinate3D? = keyManager.getValue(key)
+            if (current != null) {
+                FileLogger.write("GPS initial: lat=${current.latitude} lon=${current.longitude} alt=${current.altitude}")
+                onTelemetryUpdate(TelemetryUpdate.Location(current.latitude, current.longitude, current.altitude))
+            } else {
+                FileLogger.write("GPS initial: null (no fix yet)")
+            }
+        } catch (e: Exception) {
+            FileLogger.write("GPS getValue fail: ${e.message}")
+        }
         keyManager.listen(key, this) { _, v ->
             v?.let { loc: LocationCoordinate3D ->
+                FileLogger.write("GPS update: lat=${loc.latitude} lon=${loc.longitude}")
                 onTelemetryUpdate(TelemetryUpdate.Location(loc.latitude, loc.longitude, loc.altitude))
             }
         }
@@ -121,8 +135,18 @@ class TelemetryManager(
 
     private fun listenSatelliteCount() = safeSubscribe("satellites") {
         val key = KeyTools.createKey(FlightControllerKey.KeyGPSSatelliteCount)
+        try {
+            val current: Int? = keyManager.getValue(key)
+            FileLogger.write("Satellites initial: $current")
+            if (current != null) onTelemetryUpdate(TelemetryUpdate.Satellites(current))
+        } catch (e: Exception) {
+            FileLogger.write("Satellites getValue fail: ${e.message}")
+        }
         keyManager.listen(key, this) { _, v ->
-            v?.let { onTelemetryUpdate(TelemetryUpdate.Satellites(it)) }
+            v?.let {
+                FileLogger.write("Satellites update: $it")
+                onTelemetryUpdate(TelemetryUpdate.Satellites(it))
+            }
         }
     }
 
