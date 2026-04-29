@@ -81,6 +81,8 @@ object TFLiteRunner {
 
             val classRaw = classFlat.getOrElse(i) { 0f }
             val classIdx = (classRaw.toInt() - 1).coerceIn(0, DetectorConfig.LABELS.size - 1)
+            val label = DetectorConfig.LABELS[classIdx]
+            if (label !in DetectorConfig.ALLOWED_LABELS) continue
 
             val base = i * 4
             if (base + 3 >= boxesFlat.size) continue
@@ -91,7 +93,7 @@ object TFLiteRunner {
             if (xmax <= xmin || ymax <= ymin) continue
 
             results.add(DetectionResult(
-                label      = DetectorConfig.LABELS[classIdx],
+                label      = label,
                 confidence = score,
                 boxNorm    = RectF(xmin, ymin, xmax, ymax),
                 trackId    = i

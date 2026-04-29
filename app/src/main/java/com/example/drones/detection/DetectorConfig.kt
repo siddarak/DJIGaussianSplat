@@ -12,8 +12,18 @@ package com.example.drones.detection
 object DetectorConfig {
 
     const val MODEL_FILE     = "efficientdet_lite0.tflite"
-    const val SCORE_THRESHOLD = 0.05f   // raise to 0.30 once detection confirmed working
+    const val SCORE_THRESHOLD = 0.30f
     const val MAX_RESULTS    = 5
+
+    // Only show objects worth orbiting (big, stationary). Filters out
+    // frisbees, food, utensils, phones, etc. that appear on a chair.
+    val ALLOWED_LABELS = setOf(
+        "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck",
+        "boat", "traffic light", "fire hydrant", "stop sign", "parking meter", "bench",
+        "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe",
+        "chair", "couch", "potted plant", "bed", "dining table", "toilet",
+        "tv", "laptop", "microwave", "oven", "refrigerator"
+    )
 
     enum class Normalization { ZERO_TO_ONE, NEG_ONE_TO_ONE, RAW_BYTES }
 
