@@ -46,6 +46,8 @@ class TelemetryManager(
         listenFlyingState()
         listenFlightMode()
         listenSatelliteCount()
+        listenGpsValid()
+        listenGpsSignalLevel()
         listenBatteryPercent()
         listenBatteryTemp()
         listenGimbal()
@@ -71,28 +73,17 @@ class TelemetryManager(
 
     private fun listenAltitude() = safeSubscribe("altitude") {
         val key = KeyTools.createKey(FlightControllerKey.KeyAltitude)
-        keyManager.listen(key, this) { _, v ->
+        keyManager.listen(key, this, true) { _, v ->
             v?.let { onTelemetryUpdate(TelemetryUpdate.Altitude(it.toDouble())) }
         }
     }
 
     private fun listenLocation() = safeSubscribe("location") {
         val key = KeyTools.createKey(FlightControllerKey.KeyAircraftLocation3D)
-        // Seed initial value (listen only fires on CHANGES — drone may already have GPS lock)
-        try {
-            val current: LocationCoordinate3D? = keyManager.getValue(key)
-            if (current != null) {
-                FileLogger.write("GPS initial: lat=${current.latitude} lon=${current.longitude} alt=${current.altitude}")
-                onTelemetryUpdate(TelemetryUpdate.Location(current.latitude, current.longitude, current.altitude))
-            } else {
-                FileLogger.write("GPS initial: null (no fix yet)")
-            }
-        } catch (e: Exception) {
-            FileLogger.write("GPS getValue fail: ${e.message}")
-        }
-        keyManager.listen(key, this) { _, v ->
+        FileLogger.write("Location supported=${keyManager.isKeySupported(key)}")
+        keyManager.listen(key, this, true) { _, v ->
             v?.let { loc: LocationCoordinate3D ->
-                FileLogger.write("GPS update: lat=${loc.latitude} lon=${loc.longitude}")
+                FileLogger.write("GPS lat=${loc.latitude} lon=${loc.longitude} alt=${loc.altitude}")
                 onTelemetryUpdate(TelemetryUpdate.Location(loc.latitude, loc.longitude, loc.altitude))
             }
         }
@@ -100,7 +91,7 @@ class TelemetryManager(
 
     private fun listenVelocity() = safeSubscribe("velocity") {
         val key = KeyTools.createKey(FlightControllerKey.KeyAircraftVelocity)
-        keyManager.listen(key, this) { _, v ->
+        keyManager.listen(key, this, true) { _, v ->
             v?.let { vel: Velocity3D ->
                 val horizontal = sqrt(vel.x * vel.x + vel.y * vel.y)
                 onTelemetryUpdate(TelemetryUpdate.Velocity(horizontal, vel.z))
@@ -110,7 +101,7 @@ class TelemetryManager(
 
     private fun listenAttitude() = safeSubscribe("attitude") {
         val key = KeyTools.createKey(FlightControllerKey.KeyAircraftAttitude)
-        keyManager.listen(key, this) { _, v ->
+        keyManager.listen(key, this, true) { _, v ->
             v?.let { att: Attitude ->
                 onTelemetryUpdate(TelemetryUpdate.Heading(att.yaw))
             }
@@ -119,14 +110,14 @@ class TelemetryManager(
 
     private fun listenFlyingState() = safeSubscribe("flyingState") {
         val key = KeyTools.createKey(FlightControllerKey.KeyIsFlying)
-        keyManager.listen(key, this) { _, v ->
+        keyManager.listen(key, this, true) { _, v ->
             v?.let { onTelemetryUpdate(TelemetryUpdate.FlyingState(it)) }
         }
     }
 
     private fun listenFlightMode() = safeSubscribe("flightMode") {
         val key = KeyTools.createKey(FlightControllerKey.KeyFlightMode)
-        keyManager.listen(key, this) { _, v ->
+        keyManager.listen(key, this, true) { _, v ->
             v?.let { mode: FlightMode ->
                 onTelemetryUpdate(TelemetryUpdate.FlightModeUpdate(mode.name))
             }
@@ -135,18 +126,26 @@ class TelemetryManager(
 
     private fun listenSatelliteCount() = safeSubscribe("satellites") {
         val key = KeyTools.createKey(FlightControllerKey.KeyGPSSatelliteCount)
-        try {
-            val current: Int? = keyManager.getValue(key)
-            FileLogger.write("Satellites initial: $current")
-            if (current != null) onTelemetryUpdate(TelemetryUpdate.Satellites(current))
-        } catch (e: Exception) {
-            FileLogger.write("Satellites getValue fail: ${e.message}")
-        }
-        keyManager.listen(key, this) { _, v ->
+        FileLogger.write("Satellites supported=${keyManager.isKeySupported(key)}")
+        keyManager.listen(key, this, true) { _, v ->
             v?.let {
-                FileLogger.write("Satellites update: $it")
+                FileLogger.write("Sat count=$it")
                 onTelemetryUpdate(TelemetryUpdate.Satellites(it))
             }
+        }
+    }
+
+    private fun listenGpsValid() = safeSubscribe("gpsValid") {
+        val key = KeyTools.createKey(FlightControllerKey.KeyGPSIsValid)
+        keyManager.listen(key, this, true) { _, v ->
+            FileLogger.write("GPS valid=$v")
+        }
+    }
+
+    private fun listenGpsSignalLevel() = safeSubscribe("gpsSignal") {
+        val key = KeyTools.createKey(FlightControllerKey.KeyGPSSignalLevel)
+        keyManager.listen(key, this, true) { _, v ->
+            FileLogger.write("GPS signal level=$v")
         }
     }
 
@@ -154,7 +153,7 @@ class TelemetryManager(
 
     private fun listenBatteryPercent() = safeSubscribe("batteryPercent") {
         val key = KeyTools.createKey(BatteryKey.KeyChargeRemainingInPercent)
-        keyManager.listen(key, this) { _, v ->
+        keyManager.listen(key, this, true) { _, v ->
             v?.let { pct: Int ->
                 onTelemetryUpdate(TelemetryUpdate.Battery(
                     percent = pct,
@@ -167,7 +166,7 @@ class TelemetryManager(
 
     private fun listenBatteryTemp() = safeSubscribe("batteryTemp") {
         val key = KeyTools.createKey(BatteryKey.KeyBatteryTemperature)
-        keyManager.listen(key, this) { _, v ->
+        keyManager.listen(key, this, true) { _, v ->
             v?.let { onTelemetryUpdate(TelemetryUpdate.BatteryTemp(it.toDouble())) }
         }
     }
@@ -176,7 +175,7 @@ class TelemetryManager(
 
     private fun listenGimbal() = safeSubscribe("gimbal") {
         val key = KeyTools.createKey(GimbalKey.KeyGimbalAttitude)
-        keyManager.listen(key, this) { _, v ->
+        keyManager.listen(key, this, true) { _, v ->
             v?.let { att: Attitude ->
                 onTelemetryUpdate(TelemetryUpdate.GimbalAttitude(att.pitch, att.yaw, att.roll))
             }
@@ -201,14 +200,14 @@ class TelemetryManager(
 
     private fun listenLandingConfirmation() = safeSubscribe("landingConfirmation") {
         val key = KeyTools.createKey(FlightControllerKey.KeyIsLandingConfirmationNeeded)
-        keyManager.listen(key, this) { _, v ->
+        keyManager.listen(key, this, true) { _, v ->
             v?.let { onTelemetryUpdate(TelemetryUpdate.LandingConfirmation(it)) }
         }
     }
 
     private fun listenSignal() = safeSubscribe("signal") {
         val key = KeyTools.createKey(AirLinkKey.KeyUpLinkQuality)
-        keyManager.listen(key, this) { _, v ->
+        keyManager.listen(key, this, true) { _, v ->
             v?.let { onTelemetryUpdate(TelemetryUpdate.Signal(it)) }
         }
     }
