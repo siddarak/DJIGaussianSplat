@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class LiveMarkerDetector(
     private val context: Context,
     private val onMarkers: (List<MarkerObservation>) -> Unit,
-    markerSizeM: Double = 0.20
+    markerSizeM: Double = 0.15
 ) {
     companion object {
         private const val TAG = "LiveMarkerDetector"

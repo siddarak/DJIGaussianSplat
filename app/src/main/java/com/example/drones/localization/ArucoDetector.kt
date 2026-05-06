@@ -24,7 +24,11 @@ import org.opencv.objdetect.Objdetect
  * Thread-safe: detect() can be called from any thread.
  */
 class ArucoDetector(
-    private val markerSizeM: Double = 0.20    // 20cm default. Configurable per environment.
+    // Physical size of one marker side in meters. Must match printed size.
+    // Affects pose distance estimate; detection itself is size-agnostic.
+    // 0.15m (150mm) ≈ reliable detection to ~5m at 1080p.
+    // Smaller markers detect at shorter range (50mm only ~1m).
+    private val markerSizeM: Double = 0.15
 ) {
     companion object {
         private const val TAG = "ArucoDetector"
