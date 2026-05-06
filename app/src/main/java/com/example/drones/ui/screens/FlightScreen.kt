@@ -4,7 +4,6 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,33 +11,43 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
-import com.example.drones.orbit.OrbitState
 import com.example.drones.ui.MainViewModel
 import com.example.drones.ui.components.BottomTelemetryBar
 import com.example.drones.ui.components.FlightControlsPanel
+import com.example.drones.ui.components.ModeActionSlot
 import com.example.drones.ui.components.ObjectSelector
-import com.example.drones.ui.components.RecordingControls
+import com.example.drones.ui.components.RailButton
 import com.example.drones.ui.components.RecordingDebugOverlay
 import com.example.drones.ui.components.TopHudBar
 import com.example.drones.ui.components.VideoFeedView
 import com.example.drones.ui.components.WarningBanners
+import com.example.drones.util.FileBrowser
 import java.io.File
 
+/**
+ * Cockpit — primary live-flight screen.
+ *
+ * Layout (left rail + center video + bottom CTA):
+ *   ┌─[TopHud]──────────────────────────────[⚙]─┐
+ *   │ rail │                                    │
+ *   │ REC  │            LIVE VIDEO              │
+ *   │ SEL  │                                    │
+ *   │ DBG  │                                    │
+ *   │ FILE │                                    │
+ *   ├──────┴────────────────────────────────────┤
+ *   │ FlightControls    [MODE-CTA]              │
+ *   │ BottomTelemetryBar                        │
+ *   └───────────────────────────────────────────┘
+ */
 @Composable
 fun FlightScreen(viewModel: MainViewModel) {
     val state by viewModel.droneState.collectAsState()
@@ -62,7 +71,7 @@ fun FlightScreen(viewModel: MainViewModel) {
             onObjectTapped = { det -> viewModel.selectDetection(det) }
         )
 
-        // Layer 1: Object selector overlay
+        // Layer 1: Object selector overlay (manual region selection)
         ObjectSelector(
             selectedRegion = state.selectedRegion,
             isSelectionMode = state.isSelectionMode,
@@ -70,19 +79,28 @@ fun FlightScreen(viewModel: MainViewModel) {
             modifier = Modifier.fillMaxSize()
         )
 
-        // Layer 2: HUD
+        // Layer 2: Cockpit chrome (HUD + rails + controls)
         Column(modifier = Modifier.fillMaxSize()) {
 
             TopHudBar(state)
             WarningBanners(state)
 
-            // Middle row: left controls | spacer | right controls
+            // Center row: left rail | video (transparent passthrough)
             Row(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxSize()
             ) {
-                // LEFT — flight controls
+                LeftRail(viewModel, state)
+                Spacer(modifier = Modifier.weight(1f))
+            }
+
+            // Bottom row: flight controls (left) + mode CTA (right)
+            Row(
+                modifier = Modifier
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 FlightControlsPanel(
                     state = state,
                     onTakeOff           = { viewModel.takeOff() },
@@ -99,53 +117,11 @@ fun FlightScreen(viewModel: MainViewModel) {
 
                 Spacer(modifier = Modifier.weight(1f))
 
-                // RIGHT — recording + object selection + debug
-                Column(
-                    modifier = Modifier.padding(end = 8.dp, top = 8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    // Object SELECT / DONE
-                    ActionButton(
-                        label = if (state.isSelectionMode) "DONE" else "SELECT",
-                        color = if (state.isSelectionMode) Color.Cyan else Color(0xFF90CAF9),
-                        onClick = { viewModel.toggleSelectionMode() }
-                    )
-
-                    if (state.selectedRegion != null && !state.isSelectionMode) {
-                        ActionButton(
-                            label = "CLEAR",
-                            color = Color(0xFFEF9A9A),
-                            onClick = { viewModel.clearSelection() }
-                        )
-                    }
-
-                    // Orbit controls
-                    OrbitControls(
-                        state = state,
-                        onLockOrbit = { viewModel.lockOrbitTarget() },
-                        onAbortOrbit = { viewModel.abortOrbit() }
-                    )
-
-                    // Recording controls
-                    RecordingControls(
-                        isRecordingOnDevice = state.isRecordingOnDevice,
-                        isRecordingOnDrone  = state.isRecordingOnDrone,
-                        recordingTimeSeconds = state.recordingTimeSeconds,
-                        isProductConnected  = state.productConnected,
-                        lastRecordingPath   = state.lastRecordingPath,
-                        onStartRecording    = { viewModel.startRecording() },
-                        onStopRecording     = { viewModel.stopRecording() },
-                        onOpenLastRecording = { openLastRecording(context, viewModel) }
-                    )
-
-                    // Debug toggle button
-                    ActionButton(
-                        label = "DEBUG",
-                        color = Color.Gray,
-                        onClick = { viewModel.toggleDebugOverlay() }
-                    )
-                }
+                ModeActionSlot(
+                    state = state,
+                    onLockOrbit  = { viewModel.lockOrbitTarget() },
+                    onAbortOrbit = { viewModel.abortOrbit() }
+                )
             }
 
             BottomTelemetryBar(state)
@@ -163,78 +139,79 @@ fun FlightScreen(viewModel: MainViewModel) {
     }
 }
 
+/**
+ * Left rail — always-visible 1-tap actions.
+ *
+ * Tools that don't depend on a flight mode: recording, region select,
+ * debug overlay, log share. Mode-specific CTAs live in [ModeActionSlot].
+ */
 @Composable
-private fun OrbitControls(
-    state: com.example.drones.data.DroneState,
-    onLockOrbit: () -> Unit,
-    onAbortOrbit: () -> Unit
+private fun LeftRail(
+    viewModel: MainViewModel,
+    state: com.example.drones.data.DroneState
 ) {
-    val orbitState = state.orbitState
-    val isOrbiting = orbitState is OrbitState.Flying ||
-            orbitState is OrbitState.Climbing ||
-            orbitState == OrbitState.TopShot ||
-            orbitState == OrbitState.Arming
-
-    if (isOrbiting) {
-        // Abort button + status while orbiting
-        val label = when (orbitState) {
-            is OrbitState.Arming   -> "ARM..."
-            is OrbitState.Climbing -> "CLIMB"
-            is OrbitState.Flying   -> {
-                val pct = orbitState.progressDeg.toInt()
-                "${orbitState.ring.label} $pct°"
+    val context = LocalContext.current
+    Column(
+        modifier = Modifier
+            .padding(start = 8.dp, top = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        // Recording — pill rotates between OFF/ON
+        RailButton(
+            label = if (state.isRecordingOnDevice) "STOP" else "REC",
+            sublabel = if (state.isRecordingOnDevice) "${state.recordingTimeSeconds}s" else null,
+            accent = if (state.isRecordingOnDevice) Color(0xFFFF1744) else Color(0xFFFF6D00),
+            active = state.isRecordingOnDevice,
+            enabled = state.productConnected,
+            onClick = {
+                if (state.isRecordingOnDevice) viewModel.stopRecording()
+                else viewModel.startRecording()
             }
-            OrbitState.TopShot -> "TOP"
-            else -> "ORBIT"
-        }
-        ActionButton(label = label, color = Color(0xFFFFD600), onClick = {})
-        ActionButton(label = "ABORT", color = Color.Red, onClick = onAbortOrbit)
-    } else {
-        // Lock button — only active when drone is flying and target selected
-        val canLock = state.productConnected && state.isFlying &&
-                state.forwardObstacleDistM in 0.38f..20f
-        val lockColor = when {
-            !state.productConnected || !state.isFlying -> Color.Gray
-            state.selectedDetectionId != null -> Color(0xFF76FF03)  // green — target selected
-            state.forwardObstacleDistM in 0.38f..20f -> Color(0xFF90CAF9)  // blue — sensor ready
-            else -> Color.Gray
-        }
-        val sensorText = if (state.forwardObstacleDistM > 0)
-            "%.1fm".format(state.forwardObstacleDistM) else "---"
-
-        ActionButton(
-            label = "ORBIT\n$sensorText",
-            color = lockColor,
-            onClick = { if (canLock) onLockOrbit() }
         )
 
-        if (orbitState is OrbitState.Done) {
-            ActionButton(label = "DONE!", color = Color(0xFF76FF03), onClick = {})
+        // Open last recording
+        if (!state.lastRecordingPath.isNullOrEmpty()) {
+            RailButton(
+                label = "PLAY",
+                accent = Color(0xFF90CAF9),
+                onClick = { openLastRecording(context, viewModel) }
+            )
         }
-        if (orbitState is OrbitState.Error) {
-            ActionButton(label = "ERR", color = Color.Red, onClick = {})
+
+        // Manual region select (legacy object picker)
+        RailButton(
+            label = if (state.isSelectionMode) "DONE" else "SEL",
+            accent = if (state.isSelectionMode) Color.Cyan else Color(0xFF90CAF9),
+            active = state.isSelectionMode,
+            onClick = { viewModel.toggleSelectionMode() }
+        )
+
+        if (state.selectedRegion != null && !state.isSelectionMode) {
+            RailButton(
+                label = "CLR",
+                accent = Color(0xFFEF9A9A),
+                onClick = { viewModel.clearSelection() }
+            )
         }
+
+        // Debug overlay
+        RailButton(
+            label = "DBG",
+            accent = Color.Gray,
+            active = state.showDebugOverlay,
+            onClick = { viewModel.toggleDebugOverlay() }
+        )
+
+        // Log share / files
+        RailButton(
+            label = "FILE",
+            accent = Color(0xFF1565C0),
+            onClick = { FileBrowser.openDroneFolder(context) }
+        )
     }
 }
 
-@Composable
-private fun ActionButton(label: String, color: Color, onClick: () -> Unit) {
-    Text(
-        text = label,
-        color = color,
-        fontSize = 10.sp,
-        fontFamily = FontFamily.Monospace,
-        fontWeight = FontWeight.Bold,
-        modifier = Modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(color.copy(alpha = 0.25f))
-            .clickable { onClick() }
-            .padding(horizontal = 12.dp, vertical = 6.dp)
-    )
-}
-
 private fun openLastRecording(context: android.content.Context, viewModel: MainViewModel) {
-    // Try MediaStore URI first (works with scoped storage)
     val uri = viewModel.getLastRecordingUri()
     if (uri != null) {
         try {
@@ -249,7 +226,6 @@ private fun openLastRecording(context: android.content.Context, viewModel: MainV
         }
     }
 
-    // Fallback to file path
     val path = viewModel.getLastRecordingPath()
     if (path.isEmpty()) return
 
