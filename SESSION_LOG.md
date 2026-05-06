@@ -82,6 +82,14 @@ Format: `[date] vX.Y-tag — what / why / status`. Status: ✅ confirmed / ⏳ u
 - **d832538** ▶ tag **v2.0-cockpit-refactor** — Phase A. Created `RailButton` (44dp 1-tap pills) and `ModeActionSlot` (single bottom-center CTA driven by orbit state). Refactored `FlightScreen`: left rail hosts REC, PLAY, SEL, CLR, DBG, FILE; bottom row hosts FlightControlsPanel + ModeActionSlot. Right-side stacked button column deleted. ⏳ visual untested on device
 - 📝 next phases: B (Pre-Flight + Pairing gates) and C (Capture Wizard scaffolding for marker survey)
 - **fe577d5** ▶ tag **v2.1-marker-live** — `LiveMarkerDetector` wired to DJI NV21 stream. Lightweight: uses Y plane directly as grayscale Mat (zero copy beyond byte slice), 5 fps throttle, drop-if-busy `AtomicBoolean`. Mutually exclusive with object detection (shared single DJI listener). New `SURV` rail button toggles. New marker overlay in `VideoFeedView`: draws yellow polygon outlines on detected ArUco corners + ID + distance label per marker. ⏳ untested with physical markers
+- **ad0ea03** ▶ tag **v2.1.1-marker-150mm** — default marker size 0.20m → 0.15m (reliable detection to ~5m at 1080p; 50mm only ~1m). Reasoning: marker-size config affects pose/distance estimate but not detection itself.
+- **3cbf267** ▶ tag **v2.2-survey** — full survey workflow shipped:
+  - `MarkerMap`: id→worldPosition, JSON persist to `marker-maps/<env>.json`
+  - `SurveyController`: chain co-observation. First marker = world origin. Each new marker must be co-visible with at least one already-locked marker; world position derived via `solvePnP` rvec/tvec → relative transform. Simplified ground-plane assumption (markers flat).
+  - `SurveyPanel` Compose component: top-down 2D preview with chronological connecting lines, marker dots (origin = green stroked, others = yellow filled), waypoint list, "ADD WP N · ID X" CTA when candidate detected, RESET / DONE controls (DONE gated on ≥3 waypoints).
+  - State: `capturedWaypoints`, `surveyCandidate`, `surveyComplete` in `DroneState`.
+  - ViewModel: `addCurrentWaypoint()`, `resetSurvey()`, `finishSurvey()` saves JSON.
+  - ⏳ untested in flight; math approximation may need tuning per real measurements.
 
 ---
 
