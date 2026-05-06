@@ -81,6 +81,7 @@ Format: `[date] vX.Y-tag — what / why / status`. Status: ✅ confirmed / ⏳ u
 - Spawned design subagent → IA design doc returned. 6 screens: Pairing / Pre-Flight / Cockpit / Capture Wizard / Gallery / Settings. Cockpit is home; left rail + bottom-center mode CTA; no right column. ModeChip top-left to switch modes. Wizards full-screen modal. Settings as drawer.
 - **d832538** ▶ tag **v2.0-cockpit-refactor** — Phase A. Created `RailButton` (44dp 1-tap pills) and `ModeActionSlot` (single bottom-center CTA driven by orbit state). Refactored `FlightScreen`: left rail hosts REC, PLAY, SEL, CLR, DBG, FILE; bottom row hosts FlightControlsPanel + ModeActionSlot. Right-side stacked button column deleted. ⏳ visual untested on device
 - 📝 next phases: B (Pre-Flight + Pairing gates) and C (Capture Wizard scaffolding for marker survey)
+- **fe577d5** ▶ tag **v2.1-marker-live** — `LiveMarkerDetector` wired to DJI NV21 stream. Lightweight: uses Y plane directly as grayscale Mat (zero copy beyond byte slice), 5 fps throttle, drop-if-busy `AtomicBoolean`. Mutually exclusive with object detection (shared single DJI listener). New `SURV` rail button toggles. New marker overlay in `VideoFeedView`: draws yellow polygon outlines on detected ArUco corners + ID + distance label per marker. ⏳ untested with physical markers
 
 ---
 
