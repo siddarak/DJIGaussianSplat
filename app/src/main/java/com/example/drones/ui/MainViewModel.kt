@@ -10,6 +10,8 @@ import com.example.drones.data.SdkConnectionState
 import com.example.drones.detection.DetectionResult
 import com.example.drones.detection.LiveObjectDetector
 import com.example.drones.localization.LiveMarkerDetector
+import com.example.drones.localization.MarkerMap
+import com.example.drones.localization.SurveyController
 import com.example.drones.orbit.AutoYaw
 import com.example.drones.orbit.MissionPlanner
 import com.example.drones.orbit.OrbitExecutor
@@ -48,6 +50,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private lateinit var objectDetector: LiveObjectDetector
     private var markerDetector: LiveMarkerDetector? = null
+    private val survey = SurveyController()
     private var orbitExecutor: OrbitExecutor? = null
     private var detectionStatusJob: Job? = null
 
@@ -554,14 +557,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun toggleSurveyMode() {
         val on = !_droneState.value.surveyMode
-        _droneState.update { it.copy(surveyMode = on, markersDetected = emptyList()) }
+        _droneState.update { it.copy(
+            surveyMode = on,
+            markersDetected = emptyList(),
+            surveyCandidate = null
+        )}
         if (on) {
             objectDetector.stop()
             if (markerDetector == null) {
                 markerDetector = LiveMarkerDetector(
                     context = getApplication(),
                     onMarkers = { obs ->
-                        _droneState.update { it.copy(markersDetected = obs) }
+                        val cand = survey.resolveCandidate(obs)
+                        _droneState.update { it.copy(
+                            markersDetected = obs,
+                            surveyCandidate = cand
+                        )}
                     }
                 )
             }
@@ -572,5 +583,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             objectDetector.start()
             Log.i(TAG, "Survey mode OFF — object detection resumed")
         }
+    }
+
+    /** User taps "ADD WP N" — commit the current candidate to the marker map. */
+    fun addCurrentWaypoint() {
+        val cand = _droneState.value.surveyCandidate ?: return
+        if (survey.commit(cand)) {
+            _droneState.update { it.copy(
+                capturedWaypoints = survey.markerMap.snapshot(),
+                surveyCandidate = null
+            )}
+        }
+    }
+
+    fun resetSurvey() {
+        survey.reset()
+        _droneState.update { it.copy(
+            capturedWaypoints = emptyList(),
+            surveyCandidate = null,
+            surveyComplete = false
+        )}
+    }
+
+    fun finishSurvey() {
+        if (survey.markerMap.size < 3) return  // need at least 3 for a polygon
+        MarkerMap.saveTo(getApplication(), "default", survey.markerMap)
+        _droneState.update { it.copy(surveyComplete = true) }
     }
 }

@@ -27,6 +27,7 @@ import com.example.drones.ui.components.ModeActionSlot
 import com.example.drones.ui.components.ObjectSelector
 import com.example.drones.ui.components.RailButton
 import com.example.drones.ui.components.RecordingDebugOverlay
+import com.example.drones.ui.components.SurveyPanel
 import com.example.drones.ui.components.TopHudBar
 import com.example.drones.ui.components.VideoFeedView
 import com.example.drones.ui.components.WarningBanners
@@ -86,7 +87,7 @@ fun FlightScreen(viewModel: MainViewModel) {
             TopHudBar(state)
             WarningBanners(state)
 
-            // Center row: left rail | video (transparent passthrough)
+            // Center row: left rail | video | (right survey panel when survey mode on)
             Row(
                 modifier = Modifier
                     .weight(1f)
@@ -94,6 +95,17 @@ fun FlightScreen(viewModel: MainViewModel) {
             ) {
                 LeftRail(viewModel, state)
                 Spacer(modifier = Modifier.weight(1f))
+
+                if (state.surveyMode) {
+                    SurveyPanel(
+                        waypoints       = state.capturedWaypoints,
+                        candidate       = state.surveyCandidate,
+                        onAddWaypoint   = { viewModel.addCurrentWaypoint() },
+                        onReset         = { viewModel.resetSurvey() },
+                        onDone          = { viewModel.finishSurvey() },
+                        modifier        = Modifier.padding(end = 8.dp, top = 8.dp)
+                    )
+                }
             }
 
             // Bottom row: flight controls (left) + mode CTA (right)
