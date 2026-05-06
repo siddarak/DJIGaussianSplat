@@ -3,6 +3,7 @@ package com.example.drones
 import android.app.Application
 import android.content.Context
 import android.util.Log
+import com.example.drones.localization.ArucoDetector
 import com.example.drones.sdk.DjiSdkManager
 import com.example.drones.sdk.FlightController
 import com.example.drones.util.FileLogger
@@ -26,6 +27,9 @@ class DronesApplication : Application() {
         super.onCreate()
         try { FileLogger.init(this) } catch (e: Exception) {
             Log.e(TAG, "FileLogger init failed (non-fatal): ${e.message}")
+        }
+        try { ArucoDetector.initOpenCv() } catch (e: Throwable) {
+            Log.e(TAG, "OpenCV init failed (non-fatal): ${e.message}")
         }
         DjiSdkManager.init(this)
         installCrashSafetyHandler()
