@@ -60,6 +60,22 @@ Format: `[date] vX.Y-tag — what / why / status`. Status: ✅ confirmed / ⏳ u
 ### 2026-05-01
 - **9da33ac** ▶ tag **v1.7-sat-fix** — 🎯 ROOT CAUSE FIX. Decompiled `dji-sdk-v5-aircraft-provided-5.17.0.jar`, found `KeyManager.listen(key, holder, getValueOnSubscribe: Boolean, listener)` 4-arg overload. 3-arg (what we used) fires only on changes — drone already had GPS lock when subscribed, value never *changed*, so callback never fired. Switched all 14 listeners to 4-arg with `true`. Bonus: added `KeyGPSIsValid` + `KeyGPSSignalLevel` listeners, `isKeySupported` logged on subscribe. ⏳ untested (need outdoor test)
 - **17c2abb** docs: SESSION_LOG.md created. (this file)
+- **98985d9** docs: backfilled SESSION_LOG with full Mar–May history.
+
+## Phase 3 — Marker localization (May 2026)
+
+### 2026-05-06
+- **6f4514f** ▶ tag **v1.8-opencv-dep** — added `org.opencv:opencv:4.10.0` Maven dependency. Native lib `libc++_shared.so` conflict between OpenCV and DJI native libs resolved via `jniLibs.pickFirsts.add("**/libc++_shared.so")`. APK 161MB → 168MB. ⏳ untested at runtime (lib must load on device)
+- **e98d228** ▶ tag **v1.9-aruco-scaffold** — `localization/` package created. `CameraIntrinsics` (Mini 4 Pro 73° HFOV, fx=fy≈1300px, cx=960, cy=540, zero distortion until calibrated). `MarkerObservation` data class. `ArucoDetector` wraps OpenCV `org.opencv.objdetect.ArucoDetector` with `DICT_4X4_50`, default 20cm marker size, `solvePnP` IPPE_SQUARE method. `OpenCVLoader.initLocal()` called from `DronesApplication.onCreate()` (non-fatal try/catch). ⏳ untested — install needed to verify OpenCV native lib loads
+- ✅ design locked for marker module:
+  - ArUco DICT_4X4_50 (variable count, user taps "Done")
+  - Object center = centroid of markers (no live tap)
+  - Min flight altitude clamp = 0.30m (VPS limit), LOW = max(H-0.7m, 0.30m)
+  - Gimbal pitch computed live: `-toDegrees(atan2(droneAlt - H, radius))`
+  - Rings: LOW, EQ, MID (H+0.5), HIGH (H+1.2), TOP_LEAD (H+2.0), TOP_SHOT (H+2.5, gimbal -90°)
+  - Pure dead-reckoning during orbit (no marker checks)
+  - Geofence breach → return to nearest marker waypoint
+  - One-time camera calibration UI (planned, not built)
 
 ---
 
