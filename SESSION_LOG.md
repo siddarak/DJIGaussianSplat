@@ -77,6 +77,11 @@ Format: `[date] vX.Y-tag — what / why / status`. Status: ✅ confirmed / ⏳ u
   - Geofence breach → return to nearest marker waypoint
   - One-time camera calibration UI (planned, not built)
 
+### 2026-05-06 (cont.) — UX Phase A
+- Spawned design subagent → IA design doc returned. 6 screens: Pairing / Pre-Flight / Cockpit / Capture Wizard / Gallery / Settings. Cockpit is home; left rail + bottom-center mode CTA; no right column. ModeChip top-left to switch modes. Wizards full-screen modal. Settings as drawer.
+- **d832538** ▶ tag **v2.0-cockpit-refactor** — Phase A. Created `RailButton` (44dp 1-tap pills) and `ModeActionSlot` (single bottom-center CTA driven by orbit state). Refactored `FlightScreen`: left rail hosts REC, PLAY, SEL, CLR, DBG, FILE; bottom row hosts FlightControlsPanel + ModeActionSlot. Right-side stacked button column deleted. ⏳ visual untested on device
+- 📝 next phases: B (Pre-Flight + Pairing gates) and C (Capture Wizard scaffolding for marker survey)
+
 ---
 
 ## Open / pending
