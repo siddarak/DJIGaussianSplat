@@ -46,6 +46,8 @@ android {
             // Mandatory for DJI SDK V5 native library loading
             useLegacyPackaging = true
             keepDebugSymbols.add("**/*.so")
+            // OpenCV ships its own libc++_shared.so — pick DJI's (compatible)
+            pickFirsts.add("**/libc++_shared.so")
         }
     }
 
@@ -112,6 +114,9 @@ dependencies {
     
     // TFLite — raw interpreter avoids task_vision_jni conflict with DJI native libs
     implementation("org.tensorflow:tensorflow-lite:2.14.0")
+
+    // OpenCV — used for ArUco fiducial marker detection (indoor localization)
+    implementation("org.opencv:opencv:4.10.0")
 
     // DJI SDK V5
     implementation(libs.dji.sdk.v5.aircraft)
