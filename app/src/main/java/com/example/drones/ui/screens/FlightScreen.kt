@@ -68,7 +68,8 @@ fun FlightScreen(viewModel: MainViewModel) {
             framesReceived = state.detectionFramesReceived,
             modelErrorText = state.detectionModelError,
             detectionDebugInfo = state.detectionDebugInfo,
-            onObjectTapped = { det -> viewModel.selectDetection(det) }
+            onObjectTapped = { det -> viewModel.selectDetection(det) },
+            markers = state.markersDetected
         )
 
         // Layer 1: Object selector overlay (manual region selection)
@@ -193,6 +194,15 @@ private fun LeftRail(
                 onClick = { viewModel.clearSelection() }
             )
         }
+
+        // ArUco survey mode (mutually exclusive with object detection)
+        RailButton(
+            label = "SURV",
+            sublabel = if (state.surveyMode) "${state.markersDetected.size}m" else null,
+            accent = Color(0xFFFFD600),
+            active = state.surveyMode,
+            onClick = { viewModel.toggleSurveyMode() }
+        )
 
         // Debug overlay
         RailButton(

@@ -9,6 +9,7 @@ import com.example.drones.data.DroneState
 import com.example.drones.data.SdkConnectionState
 import com.example.drones.detection.DetectionResult
 import com.example.drones.detection.LiveObjectDetector
+import com.example.drones.localization.LiveMarkerDetector
 import com.example.drones.orbit.AutoYaw
 import com.example.drones.orbit.MissionPlanner
 import com.example.drones.orbit.OrbitExecutor
@@ -46,6 +47,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var gimbalLockJob: Job? = null
 
     private lateinit var objectDetector: LiveObjectDetector
+    private var markerDetector: LiveMarkerDetector? = null
     private var orbitExecutor: OrbitExecutor? = null
     private var detectionStatusJob: Job? = null
 
@@ -537,11 +539,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         super.onCleared()
         detectionStatusJob?.cancel()
         objectDetector.stop()
+        markerDetector?.stop()
         orbitExecutor?.abort()
         stopTelemetry()
         recordingManager.cleanup()
         stopRecordingTimer()
         gimbalLockJob?.cancel()
         errorClearJob?.cancel()
+    }
+
+    /**
+     * Toggle survey (ArUco marker) mode. Mutually exclusive with object detection
+     * since both share a single DJI frame listener.
+     */
+    fun toggleSurveyMode() {
+        val on = !_droneState.value.surveyMode
+        _droneState.update { it.copy(surveyMode = on, markersDetected = emptyList()) }
+        if (on) {
+            objectDetector.stop()
+            if (markerDetector == null) {
+                markerDetector = LiveMarkerDetector(
+                    context = getApplication(),
+                    onMarkers = { obs ->
+                        _droneState.update { it.copy(markersDetected = obs) }
+                    }
+                )
+            }
+            markerDetector?.start()
+            Log.i(TAG, "Survey mode ON — ArUco active")
+        } else {
+            markerDetector?.stop()
+            objectDetector.start()
+            Log.i(TAG, "Survey mode OFF — object detection resumed")
+        }
     }
 }

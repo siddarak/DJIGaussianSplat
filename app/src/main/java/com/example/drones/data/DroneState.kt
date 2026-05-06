@@ -59,6 +59,8 @@ data class DroneState(
     val selectedDetectionLabel: String? = null,
     val selectedDetectionBox: RectF? = null,
     val detectionModelLoaded: Boolean = false,
+    val surveyMode: Boolean = false,
+    val markersDetected: List<com.example.drones.localization.MarkerObservation> = emptyList(),
     val detectionFramesReceived: Long = 0L,
     val detectionModelError: String? = null,
     val detectionDebugInfo: String = "",

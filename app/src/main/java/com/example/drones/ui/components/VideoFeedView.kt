@@ -33,6 +33,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.drones.detection.DetectionResult
+import com.example.drones.localization.MarkerObservation
 import com.example.drones.sdk.VideoStreamManager
 
 /** Colors per detection slot — cycles through 5 distinct colors */
@@ -54,7 +55,10 @@ fun VideoFeedView(
     framesReceived: Long = 0L,
     modelErrorText: String? = null,
     detectionDebugInfo: String = "",
-    onObjectTapped: (DetectionResult) -> Unit = {}
+    onObjectTapped: (DetectionResult) -> Unit = {},
+    markers: List<MarkerObservation> = emptyList(),
+    sourceFrameWidth: Int = 1920,
+    sourceFrameHeight: Int = 1080
 ) {
     var surfaceReady by remember { mutableStateOf(false) }
 
@@ -163,6 +167,43 @@ fun VideoFeedView(
                     drawContext.canvas.nativeCanvas.apply {
                         drawRect(left, labelTop, left + textWidth + 12f, labelTop + textHeight, paint)
                         drawText(label, left + 6f, labelTop + textHeight - 8f, textPaint)
+                    }
+                }
+            }
+        }
+
+        // --- ArUco marker overlay ---
+        if (markers.isNotEmpty()) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val sx = size.width / sourceFrameWidth.toFloat()
+                val sy = size.height / sourceFrameHeight.toFloat()
+                val markerColor = Color(0xFFFFD600)
+                val markerPaint = android.graphics.Paint().apply {
+                    color = android.graphics.Color.YELLOW
+                    textSize = 56f
+                    isFakeBoldText = true
+                    isAntiAlias = true
+                }
+                val bgPaint = android.graphics.Paint().apply {
+                    color = android.graphics.Color.argb(200, 0, 0, 0)
+                }
+
+                markers.forEach { m ->
+                    val pts = m.cornersPx.map { Offset(it.x * sx, it.y * sy) }
+                    // Outline polygon
+                    for (i in 0 until 4) {
+                        val a = pts[i]
+                        val b = pts[(i + 1) % 4]
+                        drawLine(markerColor, a, b, strokeWidth = 6f)
+                    }
+                    // ID + distance label
+                    val cx = pts.map { it.x }.average().toFloat()
+                    val cy = pts.map { it.y }.average().toFloat()
+                    val label = "ID ${m.id}  ${"%.2f".format(m.distanceM)}m"
+                    val w = markerPaint.measureText(label)
+                    drawContext.canvas.nativeCanvas.apply {
+                        drawRect(cx - w / 2 - 8f, cy - 36f, cx + w / 2 + 8f, cy + 16f, bgPaint)
+                        drawText(label, cx - w / 2, cy + 4f, markerPaint)
                     }
                 }
             }
