@@ -577,11 +577,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
             markerDetector?.start()
-            Log.i(TAG, "Survey mode ON — ArUco active")
+            setGimbalPitch(-90.0)   // point straight down to see ground markers
+            Log.i(TAG, "Survey mode ON — ArUco active, gimbal -90°")
         } else {
             markerDetector?.stop()
             objectDetector.start()
-            Log.i(TAG, "Survey mode OFF — object detection resumed")
+            setGimbalPitch(0.0)     // restore level on exit
+            Log.i(TAG, "Survey mode OFF — object detection resumed, gimbal level")
         }
     }
 
