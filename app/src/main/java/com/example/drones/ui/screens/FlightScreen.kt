@@ -100,6 +100,7 @@ fun FlightScreen(viewModel: MainViewModel) {
                     SurveyPanel(
                         waypoints       = state.capturedWaypoints,
                         candidate       = state.surveyCandidate,
+                        liveObservations = state.markersDetected,
                         onAddWaypoint   = { viewModel.addCurrentWaypoint() },
                         onReset         = { viewModel.resetSurvey() },
                         onDone          = { viewModel.finishSurvey() },

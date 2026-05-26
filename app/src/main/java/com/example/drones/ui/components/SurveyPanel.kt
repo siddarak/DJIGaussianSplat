@@ -28,9 +28,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.drones.localization.MarkerObservation
 import com.example.drones.localization.SurveyController
 import com.example.drones.localization.WaypointEntry
 import kotlin.math.max
+import kotlin.math.sqrt
 
 /**
  * Right-side survey panel — visible only when survey mode is ON.
@@ -45,11 +47,16 @@ import kotlin.math.max
 fun SurveyPanel(
     waypoints: List<WaypointEntry>,
     candidate: SurveyController.Candidate?,
+    liveObservations: List<MarkerObservation> = emptyList(),
     onAddWaypoint: () -> Unit,
     onReset: () -> Unit,
     onDone: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Split currently-visible markers into already-locked vs new
+    val lockedIds = waypoints.map { it.id }.toSet()
+    val visibleLocked = liveObservations.filter { it.id in lockedIds }.map { it.id }
+    val visibleNew = liveObservations.filter { it.id !in lockedIds }.map { it.id }
     Column(
         modifier = modifier
             .width(220.dp)
@@ -66,7 +73,7 @@ fun SurveyPanel(
             fontWeight = FontWeight.Bold
         )
 
-        // Top-down map
+        // Top-down map (with centroid + inter-waypoint distances)
         TopDownPreview(
             waypoints = waypoints,
             modifier = Modifier
@@ -75,6 +82,20 @@ fun SurveyPanel(
                 .clip(RoundedCornerShape(6.dp))
                 .background(Color(0xFF0D1B2A))
         )
+
+        // Live observation status
+        if (liveObservations.isNotEmpty()) {
+            Text(
+                text = buildString {
+                    if (visibleLocked.isNotEmpty()) append("seen locked: ${visibleLocked.joinToString(",")}")
+                    if (visibleLocked.isNotEmpty() && visibleNew.isNotEmpty()) append("  ")
+                    if (visibleNew.isNotEmpty()) append("new: ${visibleNew.joinToString(",")}")
+                },
+                color = Color(0xFF80DEEA),
+                fontSize = 9.sp,
+                fontFamily = FontFamily.Monospace
+            )
+        }
 
         // Chronological list
         if (waypoints.isNotEmpty()) {
@@ -207,17 +228,37 @@ private fun TopDownPreview(
             return Offset(sx.toFloat(), sy.toFloat())
         }
 
-        // Connect chronological order with lines
-        for (i in 0 until waypoints.size - 1) {
-            val a = toScreen(waypoints[i].x, waypoints[i].y)
-            val b = toScreen(waypoints[i + 1].x, waypoints[i + 1].y)
-            drawLine(Color.White.copy(alpha = 0.5f), a, b, strokeWidth = 2f)
+        val distancePaint = android.graphics.Paint().apply {
+            color = android.graphics.Color.argb(220, 200, 230, 255)
+            textSize = 18f
+            isAntiAlias = true
         }
-        // Close polygon if 3+
+
+        fun drawEdge(a: Offset, b: Offset, dist: Double, color: Color, alpha: Float, dashed: Boolean = false) {
+            drawLine(
+                color = color.copy(alpha = alpha),
+                start = a, end = b,
+                strokeWidth = if (dashed) 1.5f else 2f,
+                pathEffect = if (dashed) androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(8f, 8f)) else null
+            )
+            val midX = (a.x + b.x) / 2f
+            val midY = (a.y + b.y) / 2f
+            drawContext.canvas.nativeCanvas.drawText(
+                "%.2fm".format(dist), midX + 4f, midY - 4f, distancePaint
+            )
+        }
+
+        // Connect chronological order with lines + distance labels
+        for (i in 0 until waypoints.size - 1) {
+            val w1 = waypoints[i]; val w2 = waypoints[i + 1]
+            val d = sqrt((w2.x - w1.x).let { it * it } + (w2.y - w1.y).let { it * it })
+            drawEdge(toScreen(w1.x, w1.y), toScreen(w2.x, w2.y), d, Color.White, 0.6f)
+        }
+        // Close polygon if 3+ with dashed yellow edge + distance
         if (waypoints.size >= 3) {
-            val a = toScreen(waypoints.last().x, waypoints.last().y)
-            val b = toScreen(waypoints.first().x, waypoints.first().y)
-            drawLine(Color.Yellow.copy(alpha = 0.4f), a, b, strokeWidth = 1f, pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(8f, 8f)))
+            val w1 = waypoints.last(); val w2 = waypoints.first()
+            val d = sqrt((w2.x - w1.x).let { it * it } + (w2.y - w1.y).let { it * it })
+            drawEdge(toScreen(w1.x, w1.y), toScreen(w2.x, w2.y), d, Color.Yellow, 0.5f, dashed = true)
         }
 
         // Markers
@@ -239,6 +280,28 @@ private fun TopDownPreview(
             }
             drawContext.canvas.nativeCanvas.drawText(
                 "WP${wp.seq}", p.x + 8f, p.y - 8f, labelPaint
+            )
+        }
+
+        // Centroid (future orbit center) — only meaningful at 2+ waypoints
+        if (waypoints.size >= 2) {
+            val ccx = waypoints.sumOf { it.x } / waypoints.size
+            val ccy = waypoints.sumOf { it.y } / waypoints.size
+            val cp = toScreen(ccx, ccy)
+            // Crosshair + outer ring
+            val crossColor = Color(0xFFFF1744)
+            drawCircle(crossColor.copy(alpha = 0.7f), radius = 9f, center = cp, style = Stroke(width = 2f))
+            drawLine(crossColor, Offset(cp.x - 7f, cp.y), Offset(cp.x + 7f, cp.y), strokeWidth = 2f)
+            drawLine(crossColor, Offset(cp.x, cp.y - 7f), Offset(cp.x, cp.y + 7f), strokeWidth = 2f)
+            val centerPaint = android.graphics.Paint().apply {
+                color = android.graphics.Color.rgb(255, 23, 68)
+                textSize = 18f
+                isAntiAlias = true
+                isFakeBoldText = true
+            }
+            drawContext.canvas.nativeCanvas.drawText(
+                "CENTER (%.2f, %.2f)".format(ccx, ccy),
+                cp.x + 12f, cp.y + 6f, centerPaint
             )
         }
     }
