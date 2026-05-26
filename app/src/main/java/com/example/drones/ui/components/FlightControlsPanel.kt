@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -47,15 +48,15 @@ fun FlightControlsPanel(
     onGimbalPointDown: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(
+    Row(
         modifier = modifier
             .background(
                 Color.Black.copy(alpha = 0.55f),
-                shape = RoundedCornerShape(topEnd = 10.dp, bottomEnd = 10.dp)
+                shape = RoundedCornerShape(10.dp)
             )
-            .padding(horizontal = 10.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         // --- Takeoff / Land ---
         when {
@@ -138,30 +139,24 @@ private fun GimbalControlSection(
     onReset: () -> Unit,
     onPointDown: () -> Unit
 ) {
-    Column(
+    Row(
         modifier = Modifier
             .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(6.dp))
             .padding(6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        // Label + current angle
+        // Label + current angle inline
         Text(
-            text = "GIMBAL",
-            color = Color.White.copy(alpha = 0.4f),
-            fontSize = 8.sp,
-            fontFamily = FontFamily.Monospace
-        )
-        Text(
-            text = "%.0f°".format(state.gimbalPitch),
+            text = "GMB %.0f°".format(state.gimbalPitch),
             color = if (state.gimbalLocked) Color.Cyan else Color.White,
-            fontSize = 12.sp,
+            fontSize = 11.sp,
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Bold
         )
         if (state.gimbalLocked) {
             Text(
-                text = "LOCKED @%.0f°".format(state.gimbalLockAngle),
+                text = "L@%.0f°".format(state.gimbalLockAngle),
                 color = Color.Cyan,
                 fontSize = 8.sp,
                 fontFamily = FontFamily.Monospace
