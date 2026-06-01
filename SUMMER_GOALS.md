@@ -11,7 +11,6 @@ Three things, together:
 
 1. **Working prototype** — APK that runs end-to-end capture on a real object (indoor via markers, outdoor via GPS)
 2. **Working pipeline** — captured video feeds a downstream reconstruction tool and produces a usable splat
-3. **Paper** — a draft is in progress (no fixed venue, no fixed deadline)
 
 If something slips, the reason gets logged in [DEV_LOG.md](DEV_LOG.md).
 
@@ -53,9 +52,7 @@ If something slips, the reason gets logged in [DEV_LOG.md](DEV_LOG.md).
 - Multiple objects at once
 - Multiple drones
 - Cloud upload
-- On-device splat rendering
 - iOS port
-- Web dashboard
 
 ---
 
@@ -66,12 +63,6 @@ If something slips, the reason gets logged in [DEV_LOG.md](DEV_LOG.md).
 - Marker-less indoor capture (visual-inertial SLAM)
 - Tape-line follower between markers
 - Public dataset release (video + poses + splats)
-
----
-
-## Paper outline
-
-To be drafted once experiments are run. Likely sections: introduction, related work, system, method (marker survey + orbit math), experiments, discussion, conclusion. Will live in `paper/` when started.
 
 ---
 
