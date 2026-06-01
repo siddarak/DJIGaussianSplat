@@ -16,6 +16,12 @@ Live notes on decisions, blockers, and what's queued. New entries on top. Append
 
 ## Decisions
 
+### 2026-05-24 — Reconstruction playgrounds (private forks)
+Don't vendor the 3DGS research code into this repo (large, CUDA, separate licenses). Instead, two **private** mirror forks under `siddarak`:
+- [siddarak/gaussian-splatting](https://github.com/siddarak/gaussian-splatting) ← graphdeco-inria/gaussian-splatting (standard 3DGS training)
+- [siddarak/sort-free-gs](https://github.com/siddarak/sort-free-gs) ← LiYukeee/sort-free-gs (mobile sort-free rendering)
+Private (not GitHub forks, since forks of public repos force-public) via mirror-clone → push to new private repo. `RECONSTRUCTION.md` documents the capture→splat pipeline + how 3DGS works. Research angle: marker-survey poses substitute for COLMAP SfM.
+
 ### 2026-05-23 — Doc structure
 Split into four files: `STATUS_UPDATE`, `SUMMER_GOALS`, `DEV_LOG`, `SESSION_LOG`. Repo-only, no Notion mirror. Project-focused (no contributor table, no how-to-contribute section).
 

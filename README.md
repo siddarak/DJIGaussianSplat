@@ -21,6 +21,7 @@ The drone flies hemispherical orbits around a chosen object while the gimbal tra
 | [SUMMER_GOALS.md](SUMMER_GOALS.md) | What we plan to ship by end of June 2026 |
 | [DEV_LOG.md](DEV_LOG.md) | Decisions, blockers, backlog |
 | [SESSION_LOG.md](SESSION_LOG.md) | Every code change ever (tied to git tags) |
+| [RECONSTRUCTION.md](RECONSTRUCTION.md) | How a capture becomes a splat + the two playground repos |
 | [CLAUDE.md](CLAUDE.md) | Technical reference: MSDK API, recording pipeline, coordinate systems |
 
 ---
