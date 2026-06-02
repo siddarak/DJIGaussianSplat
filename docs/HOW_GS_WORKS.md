@@ -51,14 +51,14 @@ Position + scale + rotation together define the egg's shape via the covariance `
 Each is a standalone file in [`how_gs_works/`](how_gs_works/). Written one at a time.
 
 1. [Gaussians & ellipses](how_gs_works/01-gaussians-and-ellipses.md) — from the bell curve to a 3D blob
-2. Covariance, rotation & scale — what `Σ = R·S·Sᵀ·Rᵀ` means, with numbers *(pending)*
-3. Projecting 3D → 2D screen — perspective + the Jacobian, gently *(pending)*
-4. Alpha blending & why sorting is needed — the compositing equation, worked *(pending)*
-5. Color & spherical harmonics — view-dependent color *(pending)*
-6. The loss function — L1 + D-SSIM *(pending)*
-7. Gradient descent — a tiny worked example *(pending)*
-8. Adaptive density control — clone / split / prune *(pending)*
-9. Sort-free weighted-sum rendering — the one equation that removes the sort *(pending)*
+2. [Covariance, rotation & scale](how_gs_works/02-covariance-rotation-scale.md) — what `Σ = R·S·Sᵀ·Rᵀ` means, with numbers
+3. [Projecting 3D → 2D screen](how_gs_works/03-projection-to-screen.md) — perspective + the Jacobian, gently
+4. [Alpha blending & why sorting is needed](how_gs_works/04-alpha-blending-and-sorting.md) — the compositing equation, worked
+5. [Color & spherical harmonics](how_gs_works/05-color-spherical-harmonics.md) — view-dependent color
+6. [The loss function](how_gs_works/06-loss-function.md) — L1 + D-SSIM
+7. [Gradient descent](how_gs_works/07-gradient-descent.md) — a tiny worked example
+8. [Adaptive density control](how_gs_works/08-adaptive-density.md) — clone / split / prune
+9. [Sort-free weighted-sum rendering](how_gs_works/09-sort-free-weighted-sum.md) — the one equation that removes the sort
 
 ---
 
