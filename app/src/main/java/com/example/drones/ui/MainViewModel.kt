@@ -102,6 +102,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (connected) {
                     startTelemetry()
                     objectDetector.start()
+                    com.example.drones.sdk.CameraController.applyBestVideoMode()  // 4K/60 to SD
                 } else {
                     objectDetector.stop()
                     stopTelemetry()
