@@ -87,8 +87,11 @@ def main():
         pages.append(img)
         print(f"  {p}  ({role_for(mid)})")
 
+    # Save PDF as 1-bit (pure B/W) so Pillow uses CCITT, not JPEG (avoids
+    # needing libjpeg). Markers + labels are crisp black/white, so no loss.
     pdf_path = os.path.join(out_dir, "markers.pdf")
-    pages[0].save(pdf_path, save_all=True, append_images=pages[1:], resolution=DPI)
+    bw = [p.convert("1") for p in pages]
+    bw[0].save(pdf_path, save_all=True, append_images=bw[1:], resolution=DPI)
     print(f"\nwrote {pdf_path}  ({args.count} markers @ {args.size_mm:.0f} mm)")
     print("Print at 100% / actual size. Inner = 0-3, Outer = 4-7.")
 
