@@ -1,0 +1,17 @@
+{
+  "_comment": "Site config: marker roles + optional measured positions + table height. Copy to the device at Android/data/com.example.drones/files/site/default.json (drop the _comment). If positions are omitted, the top-scan derives them from the camera; if every marker has x/y, those measured values are used as ground truth. Units = meters. ArUco IDs come free from the marker pattern — this only supplies role/position/table.",
+  "schema_version": 1,
+  "layout_id": "default",
+  "units": "m",
+  "table_height_m": 0.74,
+  "markers": [
+    { "id": 0, "role": "inner", "x": -1.0, "y": -0.75 },
+    { "id": 1, "role": "inner", "x":  1.0, "y": -0.75 },
+    { "id": 2, "role": "inner", "x":  1.0, "y":  0.75 },
+    { "id": 3, "role": "inner", "x": -1.0, "y":  0.75 },
+    { "id": 4, "role": "outer", "x": -2.0, "y": -1.5 },
+    { "id": 5, "role": "outer", "x":  2.0, "y": -1.5 },
+    { "id": 6, "role": "outer", "x":  2.0, "y":  1.5 },
+    { "id": 7, "role": "outer", "x": -2.0, "y":  1.5 }
+  ]
+}
