@@ -172,14 +172,14 @@ fun VideoFeedView(
             }
         }
 
-        // --- ArUco marker overlay ---
+        // --- ArUco marker overlay: light-blue fill = "identified & held in memory" ---
         if (markers.isNotEmpty()) {
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val sx = size.width / sourceFrameWidth.toFloat()
                 val sy = size.height / sourceFrameHeight.toFloat()
-                val markerColor = Color(0xFFFFD600)
+                val lightBlue = Color(0xFF40C4FF)
                 val markerPaint = android.graphics.Paint().apply {
-                    color = android.graphics.Color.YELLOW
+                    color = android.graphics.Color.WHITE
                     textSize = 56f
                     isFakeBoldText = true
                     isAntiAlias = true
@@ -190,11 +190,18 @@ fun VideoFeedView(
 
                 markers.forEach { m ->
                     val pts = m.cornersPx.map { Offset(it.x * sx, it.y * sy) }
-                    // Outline polygon
+                    // Filled translucent light-blue quad — visual "I see you"
+                    val path = androidx.compose.ui.graphics.Path().apply {
+                        moveTo(pts[0].x, pts[0].y)
+                        lineTo(pts[1].x, pts[1].y)
+                        lineTo(pts[2].x, pts[2].y)
+                        lineTo(pts[3].x, pts[3].y)
+                        close()
+                    }
+                    drawPath(path, lightBlue.copy(alpha = 0.35f))
+                    // Solid light-blue outline
                     for (i in 0 until 4) {
-                        val a = pts[i]
-                        val b = pts[(i + 1) % 4]
-                        drawLine(markerColor, a, b, strokeWidth = 6f)
+                        drawLine(lightBlue, pts[i], pts[(i + 1) % 4], strokeWidth = 5f)
                     }
                     // ID + distance label
                     val cx = pts.map { it.x }.average().toFloat()
