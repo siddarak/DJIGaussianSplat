@@ -16,6 +16,16 @@ Live notes on decisions, blockers, and what's queued. New entries on top. Append
 
 ## Decisions
 
+### 2026-06-04 — Marker-anchored path + object config pipeline
+New indoor capture method (replaces chain-survey idea):
+- Climb to top, see all 8 markers in one frame, compute geometric center + marker map (most accurate fix).
+- Plan dome = 3 concentric rings (mix of shrinking radius + rising height + steeper gimbal) + top shot. Rings stay outside the **inner** perimeter (hard keep-out, object lives inside it); may overfly the **outer** perimeter (soft, localization refs only).
+- Fly each ring **open-loop** (dead-reckon X/Y), then **return to top and re-anchor** off markers to wipe drift. Height is **closed-loop** the whole time via downward VPS/ToF — vertical drift ~nil; staying outside inner perimeter keeps the downward sensor seeing floor not object.
+- Marker IDs assign role: inner = 0–3, outer = 4–7.
+- **Always confirm before flying**, even in auto. Show all rings on screen; user can scale circle size at the top (re-validated against keep-out) before ring 1. Per-ring confirm.
+- Object dimensions come from CAD, processed **off-device** by `tools/cad_dims/extract_dims.py` → `objects/<id>.json` (meters, Z-up, units mandatory or "UNKNOWN" → app confirms). App reads via `ObjectConfigRepository` from externalFilesDir/objects/. Table height measured on site (separate from CAD). Model always upright; facing irrelevant (full orbit).
+- **v2.4-objectconfig** shipped this pipeline foundation. Next: `MarkerPathPlanner` + preview/confirm UI + open-loop `MarkerOrbitExecutor`.
+
 ### 2026-05-24 — Reconstruction playgrounds (private forks)
 Don't vendor the 3DGS research code into this repo (large, CUDA, separate licenses). Instead, two **private** mirror forks under `siddarak`:
 - [siddarak/gaussian-splatting](https://github.com/siddarak/gaussian-splatting) ← graphdeco-inria/gaussian-splatting (standard 3DGS training)
