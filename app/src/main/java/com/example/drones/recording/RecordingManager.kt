@@ -59,6 +59,11 @@ class RecordingManager(private val context: Context) {
     // Debug counters
     private val rawFrameCount = AtomicLong(0)
 
+    // MediaMuxer requires the FIRST written sample to be a keyframe (IDR).
+    // Drop all P/B frames until the first IDR after the muxer starts, else the
+    // MP4 is structurally broken and won't play / open.
+    @Volatile private var firstKeyFrameWritten = false
+
     // Last completed recording
     @Volatile private var _lastRecordingPath: String = ""
     @Volatile private var _lastRecordingUri: Uri? = null
@@ -126,6 +131,7 @@ class RecordingManager(private val context: Context) {
         avcSpsFound = false; avcPpsFound = false
         avcSpsData = null; avcPpsData = null
         rawFrameCount.set(0)
+        firstKeyFrameWritten = false
 
         RecordingDebugLog.updateStatus {
             copy(streamListenerActive = false, rawFramesReceived = 0,
@@ -366,10 +372,13 @@ class RecordingManager(private val context: Context) {
             }
             // H.265 IDR frames
             19, 20 -> {
-                mp4Muxer?.writeNalUnit(data, offset, length, timestampUs, isKeyFrame = true)
-                val frames = mp4Muxer?.totalFrames ?: 0
-                if (frames <= 1 || frames % 100 == 0L) RecordingDebugLog.log("H265 IDR written, frames: $frames")
-                RecordingDebugLog.updateStatus { copy(muxerFrames = frames) }
+                if (mp4Muxer?.isStarted == true) {
+                    mp4Muxer?.writeNalUnit(data, offset, length, timestampUs, isKeyFrame = true)
+                    firstKeyFrameWritten = true
+                    val frames = mp4Muxer?.totalFrames ?: 0
+                    if (frames <= 1 || frames % 100 == 0L) RecordingDebugLog.log("H265 IDR written, frames: $frames")
+                    RecordingDebugLog.updateStatus { copy(muxerFrames = frames) }
+                }
             }
             // H.264 parameter sets
             7 -> { // H.264 SPS
@@ -391,14 +400,18 @@ class RecordingManager(private val context: Context) {
             }
             // H.264 IDR keyframe
             5 -> {
-                mp4Muxer?.writeNalUnit(data, offset, length, timestampUs, isKeyFrame = true)
-                val frames = mp4Muxer?.totalFrames ?: 0
-                if (frames <= 1 || frames % 100 == 0L) RecordingDebugLog.log("H264 IDR written, frames: $frames")
-                RecordingDebugLog.updateStatus { copy(muxerFrames = frames) }
+                if (mp4Muxer?.isStarted == true) {
+                    mp4Muxer?.writeNalUnit(data, offset, length, timestampUs, isKeyFrame = true)
+                    firstKeyFrameWritten = true
+                    val frames = mp4Muxer?.totalFrames ?: 0
+                    if (frames <= 1 || frames % 100 == 0L) RecordingDebugLog.log("H264 IDR written, frames: $frames")
+                    RecordingDebugLog.updateStatus { copy(muxerFrames = frames) }
+                }
             }
             else -> {
                 // Non-parameter, non-IDR frame (P/B frames etc.)
-                if (mp4Muxer?.isStarted == true) {
+                // Skip until the first keyframe is in — first MP4 sample MUST be a keyframe.
+                if (mp4Muxer?.isStarted == true && firstKeyFrameWritten) {
                     mp4Muxer?.writeNalUnit(data, offset, length, timestampUs, isKeyFrame = false)
                     val frames = mp4Muxer?.totalFrames ?: 0
                     if (frames % 300 == 0L) RecordingDebugLog.updateStatus { copy(muxerFrames = frames) }
