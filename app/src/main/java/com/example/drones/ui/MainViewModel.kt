@@ -12,6 +12,7 @@ import com.example.drones.detection.LiveObjectDetector
 import com.example.drones.localization.LiveMarkerDetector
 import com.example.drones.localization.MarkerLayout
 import com.example.drones.localization.TopScanLocalizer
+import com.example.drones.util.FileLogger
 import com.example.drones.orbit.AutoYaw
 import com.example.drones.orbit.MissionPlanner
 import com.example.drones.orbit.OrbitExecutor
@@ -555,20 +556,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * Toggle survey (ArUco marker) mode. Mutually exclusive with object detection
      * since both share a single DJI frame listener.
      */
+    private var markerLayout: MarkerLayout? = null
+
     fun toggleSurveyMode() {
         val on = !_droneState.value.surveyMode
         _droneState.update { it.copy(
             surveyMode = on,
             markersDetected = emptyList(),
-            topScan = null
+            topScan = null,
+            scanLocked = false
         )}
         if (on) {
             objectDetector.stop()
+            markerLayout = MarkerLayout.load(getApplication(), "default")
             if (markerDetector == null) {
                 markerDetector = LiveMarkerDetector(
                     context = getApplication(),
                     onMarkers = { obs ->
-                        _droneState.update { it.copy(markersDetected = obs) }
+                        // Compute geometric center LIVE so it shows as soon as markers
+                        // are seen — no separate tap needed. Frozen once locked.
+                        val locked = _droneState.value.scanLocked
+                        val scan = if (locked) _droneState.value.topScan
+                                   else TopScanLocalizer.localize(obs, markerLayout ?: MarkerLayout.default())
+                        _droneState.update { it.copy(markersDetected = obs, topScan = scan) }
                     }
                 )
             }
@@ -583,28 +593,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /**
-     * Top-scan: snapshot all markers currently in frame, build the ground-plane
-     * map + geometric center in one shot. (Replaces the old chained survey.)
-     */
-    fun captureTopScan() {
-        val obs = _droneState.value.markersDetected
-        if (obs.isEmpty()) {
+    /** Freeze the current live scan (center + map) so planning uses a stable snapshot. */
+    fun lockScan() {
+        if (_droneState.value.topScan == null) {
             _droneState.update { it.copy(flightActionError = "No markers in view") }
             scheduleErrorClear()
             return
         }
-        val layout = MarkerLayout.load(getApplication(), "default")
-        val result = TopScanLocalizer.localize(obs, layout)
-        if (result == null) {
-            _droneState.update { it.copy(flightActionError = "Scan failed") }
-            scheduleErrorClear()
-            return
-        }
-        _droneState.update { it.copy(topScan = result) }
+        _droneState.update { it.copy(scanLocked = true) }
+        FileLogger.write("Scan LOCKED for planning")
     }
 
     fun resetScan() {
-        _droneState.update { it.copy(topScan = null) }
+        _droneState.update { it.copy(scanLocked = false) }
     }
 }

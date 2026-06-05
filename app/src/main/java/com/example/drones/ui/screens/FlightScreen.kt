@@ -100,8 +100,9 @@ fun FlightScreen(viewModel: MainViewModel) {
                     SurveyPanel(
                         liveObservations = state.markersDetected,
                         scan             = state.topScan,
-                        onScan           = { viewModel.captureTopScan() },
-                        onReset          = { viewModel.resetScan() },
+                        locked           = state.scanLocked,
+                        onLock           = { viewModel.lockScan() },
+                        onUnlock         = { viewModel.resetScan() },
                         modifier         = Modifier.padding(end = 8.dp, top = 8.dp)
                     )
                 }

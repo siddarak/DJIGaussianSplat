@@ -41,8 +41,9 @@ import kotlin.math.max
 fun SurveyPanel(
     liveObservations: List<MarkerObservation>,
     scan: TopScanResult?,
-    onScan: () -> Unit,
-    onReset: () -> Unit,
+    locked: Boolean,
+    onLock: () -> Unit,
+    onUnlock: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -52,10 +53,14 @@ fun SurveyPanel(
             .padding(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        val centerFound = scan != null && scan.markers.isNotEmpty()
         Text(
-            text = if (scan == null) "SURVEY  ${liveObservations.size} seen"
-            else "SCAN  ${scan.markers.size} markers",
-            color = Color(0xFFFFD600),
+            text = when {
+                !centerFound -> "SCAN  ${liveObservations.size} seen"
+                locked       -> "CENTER LOCKED ✓  ${scan!!.markers.size} mk"
+                else         -> "CENTER LIVE  ${scan!!.markers.size} mk"
+            },
+            color = if (locked) Color(0xFF76FF03) else Color(0xFFFFD600),
             fontSize = 12.sp,
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Bold
@@ -71,11 +76,11 @@ fun SurveyPanel(
                 .background(Color(0xFF0D1B2A))
         )
 
-        if (scan != null) {
+        if (centerFound) {
             Text(
-                text = "center camH %.2fm\nkeep-out %.2fm  outer %.2fm\n%s"
-                    .format(scan.cameraHeightM, scan.rKeepoutM, scan.rOuterM,
-                        if (scan.source == TopScanResult.Source.MEASURED) "measured positions" else "scan-derived"),
+                text = "center (%.2f, %.2f)\ncamH %.2fm  keep-out %.2fm\nouter %.2fm  %s"
+                    .format(scan!!.centerXM, scan.centerYM, scan.cameraHeightM, scan.rKeepoutM, scan.rOuterM,
+                        if (scan.source == TopScanResult.Source.MEASURED) "measured" else "derived"),
                 color = Color(0xFF80DEEA),
                 fontSize = 9.sp,
                 fontFamily = FontFamily.Monospace
@@ -88,7 +93,7 @@ fun SurveyPanel(
             )
         } else {
             Text(
-                text = "Climb until all markers in frame, then SCAN",
+                text = "Climb until all markers in frame.\nCenter appears automatically.",
                 color = Color.White.copy(alpha = 0.6f),
                 fontSize = 10.sp,
                 fontFamily = FontFamily.Monospace
@@ -96,11 +101,11 @@ fun SurveyPanel(
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            if (scan == null) {
-                Chip("SCAN", if (liveObservations.isNotEmpty()) Color(0xFF76FF03) else Color.DarkGray,
-                    onScan, Modifier.weight(1f))
+            if (!locked) {
+                Chip("LOCK CENTER", if (centerFound) Color(0xFF76FF03) else Color.DarkGray,
+                    onLock, Modifier.weight(1f))
             } else {
-                Chip("RESCAN", Color(0xFF90CAF9), onReset, Modifier.weight(1f))
+                Chip("UNLOCK", Color(0xFF90CAF9), onUnlock, Modifier.weight(1f))
             }
         }
     }
