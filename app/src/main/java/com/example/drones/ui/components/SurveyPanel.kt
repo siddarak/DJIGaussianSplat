@@ -107,6 +107,12 @@ fun SurveyPanel(
     }
 }
 
+// Same palette + order as PathProjector.RING_COLORS so panel ↔ overlay match.
+private val RING_COLORS = listOf(
+    Color(0xFF00E5FF), Color(0xFF76FF03), Color(0xFFFFD600), Color(0xFFE040FB), Color(0xFFFF6D00)
+)
+private fun ringColor(i: Int) = RING_COLORS[i % RING_COLORS.size]
+
 @Composable
 private fun RingEditor(
     rings: List<EditableRing>,
@@ -116,38 +122,45 @@ private fun RingEditor(
     onHeight: (Double) -> Unit,
     onLock: () -> Unit
 ) {
-    // ring tabs
+    // ring tabs — each tinted its own colour; ✓ when locked
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         rings.forEachIndexed { i, r ->
             val sel = i == selected
+            val c = ringColor(i)
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(if (sel) Color(0xFF00E5FF) else Color.White.copy(alpha = 0.15f))
+                    .clip(RoundedCornerShape(5.dp))
+                    .background(if (sel) c else c.copy(alpha = 0.22f))
                     .clickable { onSelect(i) }
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                    .padding(horizontal = 9.dp, vertical = 5.dp)
             ) {
-                Text("R${i + 1}${if (r.locked) "🔒" else ""}",
-                    color = if (sel) Color.Black else Color.White,
-                    fontSize = 10.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                Text("R${i + 1}${if (r.locked) " ✓" else ""}",
+                    color = if (sel) Color.Black else c,
+                    fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
             }
         }
     }
 
     val r = rings.getOrNull(selected) ?: return
-    Text("major %.2fm  minor %.2fm".format(r.semiMajorM, r.semiMinorM),
+    val c = ringColor(selected)
+    // selected-ring header strip in its colour
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Box(Modifier.size(12.dp).clip(RoundedCornerShape(3.dp)).background(c))
+        Text("Ring ${selected + 1}${if (r.locked) "  LOCKED" else ""}",
+            color = c, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+    }
+    Text("major %.2f · minor %.2f m".format(r.semiMajorM, r.semiMinorM),
         color = Color.White, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
-    Text("height %.2fm  gimbal %.0f°".format(r.heightAboveFloorM, r.gimbalPitchDeg),
+    Text("height %.2f m · gimbal %.0f°".format(r.heightAboveFloorM, r.gimbalPitchDeg),
         color = Color.White, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
 
-    // major axis +/- (also scales minor when circle)
     StepRow("major", { onNudge(-0.25, 0.0) }, { onNudge(0.25, 0.0) })
     StepRow("minor", { onNudge(0.0, -0.25) }, { onNudge(0.0, 0.25) })
-    StepRow("both ", { onNudge(-0.25, -0.25) }, { onNudge(0.25, 0.25) })
-    StepRow("height", { onHeight(r.heightAboveFloorM - 0.2) }, { onHeight(r.heightAboveFloorM + 0.2) })
+    StepRow("size",  { onNudge(-0.25, -0.25) }, { onNudge(0.25, 0.25) })
+    StepRow("height",{ onHeight(r.heightAboveFloorM - 0.2) }, { onHeight(r.heightAboveFloorM + 0.2) })
 
-    Chip(if (r.locked) "UNLOCK R${selected + 1}" else "LOCK R${selected + 1}",
-        if (r.locked) Color(0xFF90CAF9) else Color(0xFF76FF03), onLock, Modifier.fillMaxWidth())
+    Chip(if (r.locked) "UNLOCK RING ${selected + 1}" else "LOCK RING ${selected + 1}",
+        if (r.locked) Color(0xFF90CAF9) else c, onLock, Modifier.fillMaxWidth())
 }
 
 @Composable

@@ -744,6 +744,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             rings = rings,
             getDroneAlt = { _droneState.value.altitude },
             isFlying = { _droneState.value.isFlying },
+            getCenterOffsetM = { centerOffset() },
             onState = { orbitState ->
                 _droneState.update { it.copy(orbitState = orbitState) }
                 if (orbitState is OrbitState.Flying && !_droneState.value.isRecordingOnDevice) startRecording()
