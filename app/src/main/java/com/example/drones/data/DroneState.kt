@@ -65,6 +65,10 @@ data class DroneState(
     val scanLocked: Boolean = false,
     val pendingOrbitConfirm: Boolean = false,
     val previewPath: com.example.drones.localization.ProjectedPath? = null,
+    // --- Marker capture workflow ---
+    val capturePhase: com.example.drones.orbit.CapturePhase = com.example.drones.orbit.CapturePhase.IDLE,
+    val editableRings: List<com.example.drones.orbit.EditableRing> = emptyList(),
+    val selectedRingIndex: Int = 0,
     val detectionFramesReceived: Long = 0L,
     val detectionModelError: String? = null,
     val detectionDebugInfo: String = "",

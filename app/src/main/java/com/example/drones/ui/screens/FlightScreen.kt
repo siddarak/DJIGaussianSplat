@@ -99,12 +99,24 @@ fun FlightScreen(viewModel: MainViewModel) {
 
                 if (state.surveyMode) {
                     SurveyPanel(
+                        phase            = state.capturePhase,
                         liveObservations = state.markersDetected,
                         scan             = state.topScan,
-                        locked           = state.scanLocked,
-                        onLock           = { viewModel.lockScan() },
-                        onUnlock         = { viewModel.resetScan() },
+                        rings            = state.editableRings,
+                        selectedRing     = state.selectedRingIndex,
+                        orbitStatus      = orbitStatusText(state.orbitState),
+                        onAutoCenter     = { viewModel.startAutoCenter() },
+                        onAbortCenter    = { viewModel.abortAutoCenter() },
+                        onSelectRing     = { viewModel.selectRing(it) },
+                        onNudge          = { maj, min -> viewModel.nudgeRing(state.selectedRingIndex, maj, min) },
+                        onHeight         = { h -> viewModel.updateRingHeight(state.selectedRingIndex, h) },
+                        onLockRing       = {
+                            val r = state.editableRings.getOrNull(state.selectedRingIndex)
+                            if (r?.locked == true) viewModel.unlockRing(state.selectedRingIndex)
+                            else viewModel.lockRing(state.selectedRingIndex)
+                        },
                         onStartOrbit     = { viewModel.requestMarkerOrbitConfirm() },
+                        onAbortOrbit     = { viewModel.abortMarkerOrbit() },
                         modifier         = Modifier.padding(end = 8.dp, top = 8.dp)
                     )
                 }
@@ -262,6 +274,17 @@ private fun LeftRail(
             onClick = { FileBrowser.openDroneFolder(context) }
         )
     }
+}
+
+private fun orbitStatusText(s: com.example.drones.orbit.OrbitState): String = when (s) {
+    is com.example.drones.orbit.OrbitState.Arming -> "Arming…"
+    is com.example.drones.orbit.OrbitState.Climbing -> "Climb %.1f→%.1fm".format(s.fromAlt, s.toAlt)
+    is com.example.drones.orbit.OrbitState.Flying -> "R${s.ringIndex + 1}/${s.totalRings}  ${s.progressDeg.toInt()}°"
+    com.example.drones.orbit.OrbitState.TopShot -> "Top shot"
+    com.example.drones.orbit.OrbitState.Done -> "Done"
+    com.example.drones.orbit.OrbitState.Aborted -> "Aborted"
+    is com.example.drones.orbit.OrbitState.Error -> "Err: ${s.message.take(24)}"
+    else -> "…"
 }
 
 private fun openLastRecording(context: android.content.Context, viewModel: MainViewModel) {

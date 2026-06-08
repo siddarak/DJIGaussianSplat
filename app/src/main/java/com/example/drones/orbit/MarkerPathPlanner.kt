@@ -52,4 +52,20 @@ object MarkerPathPlanner {
             )
         }
     }
+
+    /** Seed editable (initially circular) rings from the plan, for the per-ring editor. */
+    fun planEditableRings(
+        scan: TopScanResult,
+        objectHeightM: Double,
+        tableHeightM: Double
+    ): List<EditableRing> = planRings(scan, objectHeightM, tableHeightM).mapIndexed { i, r ->
+        EditableRing(
+            index = i,
+            semiMajorM = r.radiusM,
+            semiMinorM = r.radiusM,
+            heightAboveFloorM = r.heightAboveFloorM,
+            gimbalPitchDeg = r.gimbalPitchDeg,
+            locked = false
+        )
+    }
 }

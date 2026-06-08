@@ -11,7 +11,11 @@ import com.example.drones.detection.DetectionResult
 import com.example.drones.detection.LiveObjectDetector
 import com.example.drones.localization.LiveMarkerDetector
 import com.example.drones.localization.MarkerLayout
+import com.example.drones.localization.MarkerObservation
+import com.example.drones.localization.PathProjector
 import com.example.drones.localization.TopScanLocalizer
+import com.example.drones.orbit.CapturePhase
+import com.example.drones.orbit.EditableRing
 import com.example.drones.objectspec.ObjectConfigRepository
 import com.example.drones.util.FileLogger
 import com.example.drones.orbit.AutoYaw
@@ -53,6 +57,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private lateinit var objectDetector: LiveObjectDetector
     private var markerDetector: LiveMarkerDetector? = null
     private var orbitExecutor: OrbitExecutor? = null
+    private var autoCenter: com.example.drones.orbit.AutoCenterController? = null
+    private var markerOrbit: com.example.drones.orbit.MarkerOrbitExecutor? = null
     private var detectionStatusJob: Job? = null
 
     init {
@@ -209,8 +215,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Release Virtual Stick before any DJI-autopilot command (land / RTH).
+     * DJI refuses auto-land / go-home while Virtual Stick owns the craft, which
+     * is why landing sometimes did nothing after an orbit.
+     */
+    private fun releaseVirtualStick() {
+        autoCenter?.abort(); autoCenter = null
+        markerOrbit?.abort(); markerOrbit = null
+        orbitExecutor?.abort(); orbitExecutor = null
+        visualOrbit?.abort(); visualOrbit = null
+        try { dji.v5.manager.aircraft.virtualstick.VirtualStickManager.getInstance().disableVirtualStick(null) }
+        catch (_: Exception) {}
+        FileLogger.write("Virtual stick released before land/RTH")
+    }
+
     fun land() {
-        _droneState.update { it.copy(isLanding = true, flightActionError = null) }
+        releaseVirtualStick()
+        _droneState.update { it.copy(isLanding = true, flightActionError = null,
+            capturePhase = com.example.drones.orbit.CapturePhase.IDLE) }
         FlightController.land { success, error ->
             _droneState.update { it.copy(
                 isLanding = if (!success) false else it.isLanding,
@@ -221,6 +244,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun returnToHome() {
+        releaseVirtualStick()
         _droneState.update { it.copy(isRth = true, flightActionError = null) }
         FlightController.returnToHome { success, error ->
             _droneState.update { it.copy(
@@ -525,49 +549,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         orbitExecutor?.start()
     }
 
-    // --- Marker-based orbit (indoor, from locked top-scan) ---
-
-    /** User tapped START ORBIT — show the mandatory confirm gate. */
-    fun requestMarkerOrbitConfirm() {
-        val scan = _droneState.value.topScan
-        if (scan == null || !_droneState.value.scanLocked) {
-            _droneState.update { it.copy(flightActionError = "Lock the center first") }
-            scheduleErrorClear()
-            return
-        }
-        _droneState.update { it.copy(pendingOrbitConfirm = true) }
-    }
-
-    fun cancelMarkerOrbit() {
-        _droneState.update { it.copy(pendingOrbitConfirm = false) }
-    }
-
-    /** Confirmed — build a mission from the locked scan + object/table heights and fly it. */
-    fun confirmMarkerOrbit() {
-        _droneState.update { it.copy(pendingOrbitConfirm = false) }
-        val scan = _droneState.value.topScan ?: return
-
-        val objConfig = ObjectConfigRepository.list(getApplication()).firstOrNull()
-            ?.let { ObjectConfigRepository.load(getApplication(), it.id) }
-        val objectHeight = objConfig?.heightM ?: 0.30
-        val tableHeight = markerLayout?.tableHeightM ?: 0.0
-        val centerAlt = tableHeight + objectHeight / 2.0
-        val radius = scan.rKeepoutM.coerceAtLeast(1.0)
-
-        val mission = OrbitMission(
-            centerLat = 0.0, centerLon = 0.0,     // unused indoors — executor flies open-loop
-            centerAlt = centerAlt,
-            orbitRadius = radius,
-            objectHeight = objectHeight,
-            lockAlt = _droneState.value.altitude,
-            startAngleDeg = MissionPlanner.startAngleDeg(_droneState.value.heading),
-            speed = 1.0                            // slow for indoor open-loop
-        )
-        val rings = MissionPlanner.executionOrder(MissionPlanner.planRings(mission))
-        FileLogger.write("Marker orbit: radius=${radius}m objH=${objectHeight} centerAlt=${centerAlt} rings=${rings.size}")
-        launchOrbit(mission, rings)
-    }
-
     fun abortOrbit() {
         orbitExecutor?.abort()
         orbitExecutor = null
@@ -614,8 +595,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             surveyMode = on,
             markersDetected = emptyList(),
             topScan = null,
-            scanLocked = false,
-            previewPath = null
+            previewPath = null,
+            editableRings = emptyList(),
+            selectedRingIndex = 0,
+            capturePhase = if (on) CapturePhase.SCANNING else CapturePhase.IDLE
         )}
         if (on) {
             objectDetector.stop()
@@ -625,45 +608,158 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (markerDetector == null) {
                 markerDetector = LiveMarkerDetector(
                     context = getApplication(),
-                    onMarkers = { obs ->
-                        // Compute geometric center LIVE so it shows as soon as markers
-                        // are seen — no separate tap needed. Frozen once locked.
-                        val locked = _droneState.value.scanLocked
-                        val scan = if (locked) _droneState.value.topScan
-                                   else TopScanLocalizer.localize(obs, markerLayout ?: MarkerLayout.default())
-                        // Project the planned rings onto the live image (AR path preview).
-                        val preview = if (scan != null) {
-                            val rings = com.example.drones.orbit.MarkerPathPlanner.planRings(
-                                scan, surveyObjectHeightM, markerLayout?.tableHeightM ?: 0.0)
-                            com.example.drones.localization.PathProjector.project(obs, scan, rings)
-                        } else null
-                        _droneState.update { it.copy(markersDetected = obs, topScan = scan, previewPath = preview) }
-                    }
+                    onMarkers = { obs -> onMarkersFrame(obs) }
                 )
             }
             markerDetector?.start()
             setGimbalPitch(-90.0)   // point straight down to see ground markers
-            Log.i(TAG, "Survey mode ON — ArUco active, gimbal -90°")
+            Log.i(TAG, "Survey mode ON — gimbal -90°")
         } else {
             markerDetector?.stop()
             objectDetector.start()
-            setGimbalPitch(0.0)     // restore level on exit
-            Log.i(TAG, "Survey mode OFF — object detection resumed, gimbal level")
+            setGimbalPitch(0.0)
+            Log.i(TAG, "Survey mode OFF")
         }
     }
 
-    /** Freeze the current live scan (center + map) so planning uses a stable snapshot. */
-    fun lockScan() {
+    /** Per-frame marker handling: live center, phase advance, AR preview. */
+    private fun onMarkersFrame(obs: List<MarkerObservation>) {
+        val st = _droneState.value
+        val scan = TopScanLocalizer.localize(obs, markerLayout ?: MarkerLayout.default())
+
+        // Phase advance: SCANNING -> CENTER_READY once >=4 markers give a center.
+        val phase = when {
+            st.capturePhase == CapturePhase.SCANNING && (scan?.markers?.size ?: 0) >= 4 -> CapturePhase.CENTER_READY
+            st.capturePhase == CapturePhase.CENTER_READY && (scan?.markers?.size ?: 0) < 4 -> CapturePhase.SCANNING
+            else -> st.capturePhase
+        }
+
+        // AR preview: editable rings while editing, else the planned rings.
+        val preview = if (scan != null) {
+            if (phase == CapturePhase.EDITING && st.editableRings.isNotEmpty()) {
+                PathProjector.projectEditable(obs, scan, st.editableRings, st.selectedRingIndex)
+            } else {
+                PathProjector.project(obs, scan,
+                    com.example.drones.orbit.MarkerPathPlanner.planRings(
+                        scan, surveyObjectHeightM, markerLayout?.tableHeightM ?: 0.0))
+            }
+        } else null
+
+        _droneState.update { it.copy(markersDetected = obs, topScan = scan, previewPath = preview, capturePhase = phase) }
+    }
+
+    /** Live center offset (meters, body right/forward) for AutoCenterController. */
+    private fun centerOffset(): Pair<Double, Double>? {
+        val scan = _droneState.value.topScan ?: return null
+        // camera-frame center x,y ≈ horizontal offset of center from drone (gimbal down)
+        return Pair(scan.centerXM, scan.centerYM)
+    }
+
+    // --- Auto-center: drone flies itself over the computed center ---
+    fun startAutoCenter() {
+        if (!_droneState.value.isFlying) {
+            _droneState.update { it.copy(flightActionError = "Drone must be flying first") }
+            scheduleErrorClear(); return
+        }
         if (_droneState.value.topScan == null) {
-            _droneState.update { it.copy(flightActionError = "No markers in view") }
-            scheduleErrorClear()
-            return
+            _droneState.update { it.copy(flightActionError = "No center yet") }
+            scheduleErrorClear(); return
         }
-        _droneState.update { it.copy(scanLocked = true) }
-        FileLogger.write("Scan LOCKED for planning")
+        _droneState.update { it.copy(capturePhase = CapturePhase.CENTERING) }
+        autoCenter?.abort()
+        autoCenter = com.example.drones.orbit.AutoCenterController(
+            getOffsetM = { centerOffset() },
+            onSettled = {
+                viewModelScope.launch {
+                    val scan = _droneState.value.topScan
+                    val rings = if (scan != null)
+                        com.example.drones.orbit.MarkerPathPlanner.planEditableRings(
+                            scan, surveyObjectHeightM, markerLayout?.tableHeightM ?: 0.0)
+                    else emptyList()
+                    _droneState.update { it.copy(
+                        capturePhase = CapturePhase.EDITING,
+                        editableRings = rings,
+                        selectedRingIndex = 0
+                    )}
+                }
+            },
+            onState = { msg -> FileLogger.write("AutoCenter: $msg") }
+        )
+        autoCenter?.start()
     }
 
-    fun resetScan() {
-        _droneState.update { it.copy(scanLocked = false) }
+    fun abortAutoCenter() {
+        autoCenter?.abort(); autoCenter = null
+        _droneState.update { it.copy(capturePhase = CapturePhase.CENTER_READY) }
+    }
+
+    // --- Per-ring editing ---
+    fun selectRing(i: Int) = _droneState.update { it.copy(selectedRingIndex = i) }
+
+    fun updateRingAxes(i: Int, semiMajorM: Double, semiMinorM: Double) = editRing(i) {
+        it.copy(semiMajorM = semiMajorM.coerceIn(0.3, 8.0), semiMinorM = semiMinorM.coerceIn(0.3, 8.0))
+    }
+    fun nudgeRing(i: Int, dMajor: Double, dMinor: Double) = editRing(i) {
+        it.copy(semiMajorM = (it.semiMajorM + dMajor).coerceIn(0.3, 8.0),
+                semiMinorM = (it.semiMinorM + dMinor).coerceIn(0.3, 8.0))
+    }
+    fun updateRingHeight(i: Int, h: Double) = editRing(i) { it.copy(heightAboveFloorM = h.coerceIn(0.3, 6.0)) }
+    fun lockRing(i: Int) = editRing(i) { it.copy(locked = true) }
+    fun unlockRing(i: Int) = editRing(i) { it.copy(locked = false) }
+
+    private fun editRing(i: Int, change: (EditableRing) -> EditableRing) {
+        _droneState.update { st ->
+            if (i !in st.editableRings.indices) return@update st
+            val updated = st.editableRings.toMutableList().also { it[i] = change(it[i]) }
+            st.copy(editableRings = updated)
+        }
+    }
+
+    val allRingsLocked: Boolean
+        get() = _droneState.value.editableRings.let { it.isNotEmpty() && it.all { r -> r.locked } }
+
+    // --- Start orbit (after all rings locked) ---
+    fun requestMarkerOrbitConfirm() {
+        if (!allRingsLocked) {
+            _droneState.update { it.copy(flightActionError = "Lock all rings first") }
+            scheduleErrorClear(); return
+        }
+        _droneState.update { it.copy(pendingOrbitConfirm = true) }
+    }
+
+    fun cancelMarkerOrbit() = _droneState.update { it.copy(pendingOrbitConfirm = false) }
+
+    fun confirmMarkerOrbit() {
+        _droneState.update { it.copy(pendingOrbitConfirm = false) }
+        if (!_droneState.value.isFlying) {
+            _droneState.update { it.copy(flightActionError = "Drone must be flying first") }
+            scheduleErrorClear(); return
+        }
+        val rings = _droneState.value.editableRings
+        if (rings.isEmpty()) return
+        _droneState.update { it.copy(capturePhase = CapturePhase.ORBITING) }
+        FileLogger.write("MarkerOrbit start: ${rings.size} rings")
+        markerOrbit?.abort()
+        markerOrbit = com.example.drones.orbit.MarkerOrbitExecutor(
+            rings = rings,
+            getDroneAlt = { _droneState.value.altitude },
+            isFlying = { _droneState.value.isFlying },
+            onState = { orbitState ->
+                _droneState.update { it.copy(orbitState = orbitState) }
+                if (orbitState is OrbitState.Flying && !_droneState.value.isRecordingOnDevice) startRecording()
+                if (orbitState == OrbitState.Done || orbitState == OrbitState.Aborted ||
+                    orbitState is OrbitState.Error) {
+                    stopRecording()
+                    markerOrbit = null
+                    _droneState.update { it.copy(capturePhase = CapturePhase.EDITING) }
+                }
+            }
+        )
+        markerOrbit?.start()
+    }
+
+    fun abortMarkerOrbit() {
+        markerOrbit?.abort(); markerOrbit = null
+        _droneState.update { it.copy(capturePhase = CapturePhase.EDITING) }
     }
 }

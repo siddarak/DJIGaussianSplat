@@ -2,6 +2,7 @@ package com.example.drones.localization
 
 import android.graphics.PointF
 import android.util.Log
+import com.example.drones.orbit.EditableRing
 import com.example.drones.orbit.MarkerPathPlanner
 import org.opencv.calib3d.Calib3d
 import org.opencv.core.Core
@@ -12,7 +13,14 @@ import kotlin.math.sin
 import kotlin.math.PI
 
 /** One ring projected into image pixels (source-frame coords). */
-data class ProjectedRing(val label: String, val pointsPx: List<PointF>, val colorArgb: Int)
+data class ProjectedRing(
+    val label: String,
+    val pointsPx: List<PointF>,
+    val colorArgb: Int,
+    val index: Int = -1,
+    val selected: Boolean = false,
+    val locked: Boolean = false
+)
 
 /** The full planned path projected onto the current camera image. */
 data class ProjectedPath(val rings: List<ProjectedRing>, val centerPx: PointF?)
@@ -38,49 +46,76 @@ object PathProjector {
         0xFFE040FB.toInt(), 0xFFFF6D00.toInt()
     )
 
+    /** Project editable ellipse rings (used by the per-ring editor). */
+    fun projectEditable(
+        observations: List<MarkerObservation>,
+        scan: TopScanResult,
+        rings: List<EditableRing>,
+        selectedIndex: Int
+    ): ProjectedPath? {
+        val h = homography(observations, scan) ?: return null
+        val projectedRings = rings.map { ring ->
+            val pts = (0..SAMPLES).map { k ->
+                val a = 2.0 * PI * k / SAMPLES
+                Point(
+                    scan.centerXM + ring.semiMajorM * cos(a),
+                    scan.centerYM + ring.semiMinorM * sin(a)
+                )
+            }
+            ProjectedRing(
+                label = "R${ring.index + 1} ${"%.1f".format(ring.heightAboveFloorM)}m${if (ring.locked) " 🔒" else ""}",
+                pointsPx = warp(pts, h),
+                colorArgb = RING_COLORS[ring.index % RING_COLORS.size],
+                index = ring.index,
+                selected = ring.index == selectedIndex,
+                locked = ring.locked
+            )
+        }
+        val centerPx = warp(listOf(Point(scan.centerXM, scan.centerYM)), h).firstOrNull()
+        return ProjectedPath(projectedRings, centerPx)
+    }
+
     fun project(
         observations: List<MarkerObservation>,
         scan: TopScanResult,
         rings: List<MarkerPathPlanner.Ring>
     ): ProjectedPath? {
-        // Pair each live observation (image px) with its locked ground position (by id).
+        val h = homography(observations, scan) ?: return null
+        val projectedRings = rings.mapIndexed { i, ring ->
+            val pts = (0..SAMPLES).map { k ->
+                val a = 2.0 * PI * k / SAMPLES
+                Point(scan.centerXM + ring.radiusM * cos(a), scan.centerYM + ring.radiusM * sin(a))
+            }
+            ProjectedRing(ring.label, warp(pts, h), RING_COLORS[i % RING_COLORS.size], index = i)
+        }
+        val centerPx = warp(listOf(Point(scan.centerXM, scan.centerYM)), h).firstOrNull()
+        return ProjectedPath(projectedRings, centerPx)
+    }
+
+    /** Compute ground→image homography from visible markers (>=4 needed). */
+    private fun homography(observations: List<MarkerObservation>, scan: TopScanResult): org.opencv.core.Mat? {
         val groundById = scan.markers.associateBy { it.id }
-        val src = ArrayList<Point>()   // ground (x, y)
-        val dst = ArrayList<Point>()   // image (px, py)
+        val src = ArrayList<Point>()
+        val dst = ArrayList<Point>()
         observations.forEach { obs ->
             val g = groundById[obs.id] ?: return@forEach
             val c = obs.centerPx
             src.add(Point(g.xM, g.yM))
             dst.add(Point(c.x.toDouble(), c.y.toDouble()))
         }
-        if (src.size < 4) return null   // need 4+ for a homography
-
-        val srcMat = MatOfPoint2f(*src.toTypedArray())
-        val dstMat = MatOfPoint2f(*dst.toTypedArray())
-        val h = try {
-            Calib3d.findHomography(srcMat, dstMat)
+        if (src.size < 4) return null
+        return try {
+            val h = Calib3d.findHomography(MatOfPoint2f(*src.toTypedArray()), MatOfPoint2f(*dst.toTypedArray()))
+            if (h.empty()) null else h
         } catch (e: Exception) {
             Log.w(TAG, "findHomography fail: ${e.message}"); null
-        } ?: return null
-        if (h.empty()) return null
-
-        fun warp(groundPts: List<Point>): List<PointF> {
-            val inM = MatOfPoint2f(*groundPts.toTypedArray())
-            val outM = MatOfPoint2f()
-            Core.perspectiveTransform(inM, outM, h)
-            return outM.toArray().map { PointF(it.x.toFloat(), it.y.toFloat()) }
         }
+    }
 
-        // Ring footprints: circle of radius r around center on the floor.
-        val projectedRings = rings.mapIndexed { i, ring ->
-            val pts = (0..SAMPLES).map { k ->
-                val a = 2.0 * PI * k / SAMPLES
-                Point(scan.centerXM + ring.radiusM * cos(a), scan.centerYM + ring.radiusM * sin(a))
-            }
-            ProjectedRing(ring.label, warp(pts), RING_COLORS[i % RING_COLORS.size])
-        }
-
-        val centerPx = warp(listOf(Point(scan.centerXM, scan.centerYM))).firstOrNull()
-        return ProjectedPath(projectedRings, centerPx)
+    private fun warp(groundPts: List<Point>, h: org.opencv.core.Mat): List<PointF> {
+        val inM = MatOfPoint2f(*groundPts.toTypedArray())
+        val outM = MatOfPoint2f()
+        Core.perspectiveTransform(inM, outM, h)
+        return outM.toArray().map { PointF(it.x.toFloat(), it.y.toFloat()) }
     }
 }

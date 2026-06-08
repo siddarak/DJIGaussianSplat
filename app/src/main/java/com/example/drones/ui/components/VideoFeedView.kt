@@ -226,12 +226,15 @@ fun VideoFeedView(
                 previewPath.rings.forEach { ring ->
                     val col = Color(ring.colorArgb)
                     val pts = ring.pointsPx
+                    // selected ring = thick + bright; others thinner; locked = dashed feel via alpha
+                    val stroke = if (ring.selected) 8f else 4f
+                    val lineColor = if (ring.locked) col.copy(alpha = 0.6f) else col
                     for (i in 0 until pts.size - 1) {
                         drawLine(
-                            col,
+                            lineColor,
                             Offset(pts[i].x * sx, pts[i].y * sy),
                             Offset(pts[i + 1].x * sx, pts[i + 1].y * sy),
-                            strokeWidth = 4f
+                            strokeWidth = stroke
                         )
                     }
                     // ring label near its first point
