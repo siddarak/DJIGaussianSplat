@@ -59,9 +59,9 @@ fun FlightScreen(viewModel: MainViewModel) {
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        // Layer 0: Full-screen video feed with live detection overlay
+        // Layer 0: video feed — inset slightly so chrome/panels have breathing room
         VideoFeedView(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().padding(6.dp),
             isProductConnected = state.productConnected,
             detections = state.detections,
             selectedId = state.selectedDetectionId,
@@ -103,6 +103,7 @@ fun FlightScreen(viewModel: MainViewModel) {
                         locked           = state.scanLocked,
                         onLock           = { viewModel.lockScan() },
                         onUnlock         = { viewModel.resetScan() },
+                        onStartOrbit     = { viewModel.requestMarkerOrbitConfirm() },
                         modifier         = Modifier.padding(end = 8.dp, top = 8.dp)
                     )
                 }
@@ -147,6 +148,35 @@ fun FlightScreen(viewModel: MainViewModel) {
                 modifier = Modifier
                     .align(Alignment.Center)
                     .padding(16.dp)
+            )
+        }
+
+        // Layer 4: mandatory orbit confirm gate — never flies without explicit OK
+        if (state.pendingOrbitConfirm) {
+            val scan = state.topScan
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { viewModel.cancelMarkerOrbit() },
+                title = { androidx.compose.material3.Text("Start autonomous orbit?") },
+                text = {
+                    androidx.compose.material3.Text(
+                        "The drone will fly the dome rings around the locked center and record.\n\n" +
+                        "center: (%.2f, %.2f)\nkeep-out radius: %.2f m\nmarkers: %d\n\n".format(
+                            scan?.centerXM ?: 0.0, scan?.centerYM ?: 0.0,
+                            scan?.rKeepoutM ?: 0.0, scan?.markers?.size ?: 0
+                        ) +
+                        "Keep your hand on the controller. Make sure the area is clear."
+                    )
+                },
+                confirmButton = {
+                    androidx.compose.material3.TextButton(onClick = { viewModel.confirmMarkerOrbit() }) {
+                        androidx.compose.material3.Text("FLY")
+                    }
+                },
+                dismissButton = {
+                    androidx.compose.material3.TextButton(onClick = { viewModel.cancelMarkerOrbit() }) {
+                        androidx.compose.material3.Text("Cancel")
+                    }
+                }
             )
         }
     }

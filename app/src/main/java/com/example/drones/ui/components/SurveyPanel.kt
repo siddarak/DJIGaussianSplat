@@ -8,10 +8,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -44,14 +47,17 @@ fun SurveyPanel(
     locked: Boolean,
     onLock: () -> Unit,
     onUnlock: () -> Unit,
+    onStartOrbit: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
         modifier = modifier
-            .width(220.dp)
+            .width(200.dp)
+            .heightIn(max = 320.dp)
             .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+            .verticalScroll(rememberScrollState())
             .padding(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         val centerFound = scan != null && scan.markers.isNotEmpty()
         Text(
@@ -71,7 +77,7 @@ fun SurveyPanel(
             liveCount = liveObservations.size,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(180.dp)
+                .height(120.dp)
                 .clip(RoundedCornerShape(6.dp))
                 .background(Color(0xFF0D1B2A))
         )
@@ -100,13 +106,13 @@ fun SurveyPanel(
             )
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            if (!locked) {
-                Chip("LOCK CENTER", if (centerFound) Color(0xFF76FF03) else Color.DarkGray,
-                    onLock, Modifier.weight(1f))
-            } else {
-                Chip("UNLOCK", Color(0xFF90CAF9), onUnlock, Modifier.weight(1f))
-            }
+        if (!locked) {
+            Chip("LOCK CENTER", if (centerFound) Color(0xFF76FF03) else Color.DarkGray,
+                onLock, Modifier.fillMaxWidth())
+        } else {
+            // Locked → big START ORBIT + small unlock
+            Chip("▶ START ORBIT", Color(0xFF00E676), onStartOrbit, Modifier.fillMaxWidth())
+            Chip("UNLOCK", Color(0xFF90CAF9), onUnlock, Modifier.fillMaxWidth())
         }
     }
 }

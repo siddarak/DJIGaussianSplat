@@ -12,6 +12,7 @@ import com.example.drones.detection.LiveObjectDetector
 import com.example.drones.localization.LiveMarkerDetector
 import com.example.drones.localization.MarkerLayout
 import com.example.drones.localization.TopScanLocalizer
+import com.example.drones.objectspec.ObjectConfigRepository
 import com.example.drones.util.FileLogger
 import com.example.drones.orbit.AutoYaw
 import com.example.drones.orbit.MissionPlanner
@@ -499,6 +500,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             orbitState = OrbitState.Arming
         )}
 
+        launchOrbit(mission, rings)
+    }
+
+    /** Shared executor launch — used by GPS lock and marker orbit. */
+    private fun launchOrbit(mission: OrbitMission, rings: List<com.example.drones.orbit.OrbitRing>) {
         orbitExecutor?.abort()
         orbitExecutor = OrbitExecutor(
             mission = mission,
@@ -517,6 +523,49 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         )
         orbitExecutor?.start()
+    }
+
+    // --- Marker-based orbit (indoor, from locked top-scan) ---
+
+    /** User tapped START ORBIT — show the mandatory confirm gate. */
+    fun requestMarkerOrbitConfirm() {
+        val scan = _droneState.value.topScan
+        if (scan == null || !_droneState.value.scanLocked) {
+            _droneState.update { it.copy(flightActionError = "Lock the center first") }
+            scheduleErrorClear()
+            return
+        }
+        _droneState.update { it.copy(pendingOrbitConfirm = true) }
+    }
+
+    fun cancelMarkerOrbit() {
+        _droneState.update { it.copy(pendingOrbitConfirm = false) }
+    }
+
+    /** Confirmed — build a mission from the locked scan + object/table heights and fly it. */
+    fun confirmMarkerOrbit() {
+        _droneState.update { it.copy(pendingOrbitConfirm = false) }
+        val scan = _droneState.value.topScan ?: return
+
+        val objConfig = ObjectConfigRepository.list(getApplication()).firstOrNull()
+            ?.let { ObjectConfigRepository.load(getApplication(), it.id) }
+        val objectHeight = objConfig?.heightM ?: 0.30
+        val tableHeight = markerLayout?.tableHeightM ?: 0.0
+        val centerAlt = tableHeight + objectHeight / 2.0
+        val radius = scan.rKeepoutM.coerceAtLeast(1.0)
+
+        val mission = OrbitMission(
+            centerLat = 0.0, centerLon = 0.0,     // unused indoors — executor flies open-loop
+            centerAlt = centerAlt,
+            orbitRadius = radius,
+            objectHeight = objectHeight,
+            lockAlt = _droneState.value.altitude,
+            startAngleDeg = MissionPlanner.startAngleDeg(_droneState.value.heading),
+            speed = 1.0                            // slow for indoor open-loop
+        )
+        val rings = MissionPlanner.executionOrder(MissionPlanner.planRings(mission))
+        FileLogger.write("Marker orbit: radius=${radius}m objH=${objectHeight} centerAlt=${centerAlt} rings=${rings.size}")
+        launchOrbit(mission, rings)
     }
 
     fun abortOrbit() {

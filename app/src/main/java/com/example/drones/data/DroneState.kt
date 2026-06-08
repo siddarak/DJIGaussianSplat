@@ -63,6 +63,7 @@ data class DroneState(
     val markersDetected: List<com.example.drones.localization.MarkerObservation> = emptyList(),
     val topScan: com.example.drones.localization.TopScanResult? = null,
     val scanLocked: Boolean = false,
+    val pendingOrbitConfirm: Boolean = false,
     val detectionFramesReceived: Long = 0L,
     val detectionModelError: String? = null,
     val detectionDebugInfo: String = "",
