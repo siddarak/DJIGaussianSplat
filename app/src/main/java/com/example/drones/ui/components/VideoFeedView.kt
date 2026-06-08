@@ -57,6 +57,7 @@ fun VideoFeedView(
     detectionDebugInfo: String = "",
     onObjectTapped: (DetectionResult) -> Unit = {},
     markers: List<MarkerObservation> = emptyList(),
+    previewPath: com.example.drones.localization.ProjectedPath? = null,
     sourceFrameWidth: Int = 1920,
     sourceFrameHeight: Int = 1080
 ) {
@@ -212,6 +213,42 @@ fun VideoFeedView(
                         drawRect(cx - w / 2 - 8f, cy - 36f, cx + w / 2 + 8f, cy + 16f, bgPaint)
                         drawText(label, cx - w / 2, cy + 4f, markerPaint)
                     }
+                }
+            }
+        }
+
+        // --- AR flight-path preview: planned rings projected onto the live image ---
+        if (previewPath != null && previewPath.rings.isNotEmpty()) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val sx = size.width / sourceFrameWidth.toFloat()
+                val sy = size.height / sourceFrameHeight.toFloat()
+
+                previewPath.rings.forEach { ring ->
+                    val col = Color(ring.colorArgb)
+                    val pts = ring.pointsPx
+                    for (i in 0 until pts.size - 1) {
+                        drawLine(
+                            col,
+                            Offset(pts[i].x * sx, pts[i].y * sy),
+                            Offset(pts[i + 1].x * sx, pts[i + 1].y * sy),
+                            strokeWidth = 4f
+                        )
+                    }
+                    // ring label near its first point
+                    pts.firstOrNull()?.let { p ->
+                        val lp = android.graphics.Paint().apply {
+                            color = ring.colorArgb; textSize = 30f; isAntiAlias = true; isFakeBoldText = true
+                        }
+                        drawContext.canvas.nativeCanvas.drawText(ring.label, p.x * sx + 6f, p.y * sy, lp)
+                    }
+                }
+                // center marker
+                previewPath.centerPx?.let { c ->
+                    val cp = Offset(c.x * sx, c.y * sy)
+                    val red = Color(0xFFFF1744)
+                    drawLine(red, Offset(cp.x - 14f, cp.y), Offset(cp.x + 14f, cp.y), strokeWidth = 4f)
+                    drawLine(red, Offset(cp.x, cp.y - 14f), Offset(cp.x, cp.y + 14f), strokeWidth = 4f)
+                    drawCircle(red, 6f, cp)
                 }
             }
         }

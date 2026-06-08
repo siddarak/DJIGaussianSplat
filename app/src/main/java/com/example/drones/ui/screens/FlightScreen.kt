@@ -70,7 +70,8 @@ fun FlightScreen(viewModel: MainViewModel) {
             modelErrorText = state.detectionModelError,
             detectionDebugInfo = state.detectionDebugInfo,
             onObjectTapped = { det -> viewModel.selectDetection(det) },
-            markers = state.markersDetected
+            markers = state.markersDetected,
+            previewPath = state.previewPath
         )
 
         // Layer 1: Object selector overlay (manual region selection)

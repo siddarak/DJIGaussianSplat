@@ -64,6 +64,7 @@ data class DroneState(
     val topScan: com.example.drones.localization.TopScanResult? = null,
     val scanLocked: Boolean = false,
     val pendingOrbitConfirm: Boolean = false,
+    val previewPath: com.example.drones.localization.ProjectedPath? = null,
     val detectionFramesReceived: Long = 0L,
     val detectionModelError: String? = null,
     val detectionDebugInfo: String = "",

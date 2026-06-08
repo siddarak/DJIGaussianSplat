@@ -606,6 +606,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * since both share a single DJI frame listener.
      */
     private var markerLayout: MarkerLayout? = null
+    private var surveyObjectHeightM: Double = 0.30   // from CAD ObjectConfig if present
 
     fun toggleSurveyMode() {
         val on = !_droneState.value.surveyMode
@@ -613,11 +614,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             surveyMode = on,
             markersDetected = emptyList(),
             topScan = null,
-            scanLocked = false
+            scanLocked = false,
+            previewPath = null
         )}
         if (on) {
             objectDetector.stop()
             markerLayout = MarkerLayout.load(getApplication(), "default")
+            surveyObjectHeightM = ObjectConfigRepository.list(getApplication()).firstOrNull()
+                ?.let { ObjectConfigRepository.load(getApplication(), it.id)?.heightM } ?: 0.30
             if (markerDetector == null) {
                 markerDetector = LiveMarkerDetector(
                     context = getApplication(),
@@ -627,7 +631,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         val locked = _droneState.value.scanLocked
                         val scan = if (locked) _droneState.value.topScan
                                    else TopScanLocalizer.localize(obs, markerLayout ?: MarkerLayout.default())
-                        _droneState.update { it.copy(markersDetected = obs, topScan = scan) }
+                        // Project the planned rings onto the live image (AR path preview).
+                        val preview = if (scan != null) {
+                            val rings = com.example.drones.orbit.MarkerPathPlanner.planRings(
+                                scan, surveyObjectHeightM, markerLayout?.tableHeightM ?: 0.0)
+                            com.example.drones.localization.PathProjector.project(obs, scan, rings)
+                        } else null
+                        _droneState.update { it.copy(markersDetected = obs, topScan = scan, previewPath = preview) }
                     }
                 )
             }
