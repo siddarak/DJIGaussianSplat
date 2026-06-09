@@ -737,6 +737,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         val rings = _droneState.value.editableRings
         if (rings.isEmpty()) return
+
+        // Persist the planned path (marker-local, DJI-style waypoints) before flying.
+        _droneState.value.topScan?.let { scan ->
+            val wps = com.example.drones.waypoints.WaypointBuilder.build(scan, rings)
+            val path = com.example.drones.waypoints.WaypointPath(
+                id = com.example.drones.waypoints.WaypointStore.newId(),
+                createdUtc = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US)
+                    .format(java.util.Date()),
+                centerXM = scan.centerXM, centerYM = scan.centerYM, waypoints = wps
+            )
+            com.example.drones.waypoints.WaypointStore.save(getApplication(), path)
+        }
+
         _droneState.update { it.copy(capturePhase = CapturePhase.ORBITING) }
         FileLogger.write("MarkerOrbit start: ${rings.size} rings")
         markerOrbit?.abort()
