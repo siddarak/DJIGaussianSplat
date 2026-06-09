@@ -59,6 +59,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var orbitExecutor: OrbitExecutor? = null
     private var autoCenter: com.example.drones.orbit.AutoCenterController? = null
     private var markerOrbit: com.example.drones.orbit.MarkerOrbitExecutor? = null
+    private var waypointFlight: com.example.drones.orbit.WaypointFlightExecutor? = null
     private var detectionStatusJob: Job? = null
 
     init {
@@ -240,6 +241,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun releaseVirtualStick() {
         autoCenter?.abort(); autoCenter = null
         markerOrbit?.abort(); markerOrbit = null
+        waypointFlight?.abort(); waypointFlight = null
         orbitExecutor?.abort(); orbitExecutor = null
         visualOrbit?.abort(); visualOrbit = null
         try { dji.v5.manager.aircraft.virtualstick.VirtualStickManager.getInstance().disableVirtualStick(null) }
@@ -738,6 +740,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun lockRing(i: Int) = editRing(i) { it.copy(locked = true) }
     fun unlockRing(i: Int) = editRing(i) { it.copy(locked = false) }
 
+    /** Lock every ring at once (when the user is happy with all of them). */
+    fun lockAllRings() = _droneState.update { st ->
+        st.copy(editableRings = st.editableRings.map { it.copy(locked = true) })
+    }
+
     private fun editRing(i: Int, change: (EditableRing) -> EditableRing) {
         _droneState.update { st ->
             if (i !in st.editableRings.indices) return@update st
@@ -769,41 +776,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val rings = _droneState.value.editableRings
         if (rings.isEmpty()) return
 
-        // Persist the planned path (marker-local, DJI-style waypoints) before flying.
-        _droneState.value.topScan?.let { scan ->
-            val wps = com.example.drones.waypoints.WaypointBuilder.build(scan, rings)
-            val path = com.example.drones.waypoints.WaypointPath(
-                id = com.example.drones.waypoints.WaypointStore.newId(),
-                createdUtc = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US)
-                    .format(java.util.Date()),
-                centerXM = scan.centerXM, centerYM = scan.centerYM, waypoints = wps
-            )
-            com.example.drones.waypoints.WaypointStore.save(getApplication(), path)
-        }
+        val scan = _droneState.value.topScan ?: return
+        // Build the waypoints (center = origin), persist, and fly THROUGH them closed-loop.
+        val wps = com.example.drones.waypoints.WaypointBuilder.build(scan, rings)
+        val path = com.example.drones.waypoints.WaypointPath(
+            id = com.example.drones.waypoints.WaypointStore.newId(),
+            createdUtc = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US)
+                .format(java.util.Date()),
+            centerXM = scan.centerXM, centerYM = scan.centerYM, waypoints = wps
+        )
+        com.example.drones.waypoints.WaypointStore.save(getApplication(), path)
 
         _droneState.update { it.copy(capturePhase = CapturePhase.ORBITING) }
-        FileLogger.write("MarkerOrbit start: ${rings.size} rings")
-        markerOrbit?.abort()
-        markerOrbit = com.example.drones.orbit.MarkerOrbitExecutor(
-            rings = rings,
+        FileLogger.write("WaypointFlight start: ${wps.size} waypoints across ${rings.size} rings")
+        waypointFlight?.abort()
+        waypointFlight = com.example.drones.orbit.WaypointFlightExecutor(
+            waypoints = wps,
+            getCenterOffsetM = { centerOffset() },
+            getHeadingDeg = { _droneState.value.heading },
             getDroneAlt = { _droneState.value.altitude },
             isFlying = { _droneState.value.isFlying },
-            getCenterOffsetM = { centerOffset() },
             onState = { orbitState ->
                 _droneState.update { it.copy(orbitState = orbitState) }
                 if (orbitState is OrbitState.Flying && !_droneState.value.isRecordingOnDevice) startRecording()
                 if (orbitState == OrbitState.Done || orbitState == OrbitState.Aborted ||
                     orbitState is OrbitState.Error) {
                     stopRecording()
-                    markerOrbit = null
+                    waypointFlight = null
                     _droneState.update { it.copy(capturePhase = CapturePhase.EDITING) }
                 }
             }
         )
-        markerOrbit?.start()
+        waypointFlight?.start()
     }
 
     fun abortMarkerOrbit() {
+        waypointFlight?.abort(); waypointFlight = null
         markerOrbit?.abort(); markerOrbit = null
         _droneState.update { it.copy(capturePhase = CapturePhase.EDITING) }
     }

@@ -116,6 +116,7 @@ fun FlightScreen(viewModel: MainViewModel) {
                             if (r?.locked == true) viewModel.unlockRing(state.selectedRingIndex)
                             else viewModel.lockRing(state.selectedRingIndex)
                         },
+                        onLockAll        = { viewModel.lockAllRings() },
                         onStartOrbit     = { viewModel.requestMarkerOrbitConfirm() },
                         onAbortOrbit     = { viewModel.abortMarkerOrbit() },
                         modifier         = Modifier.padding(end = 8.dp, top = 8.dp)

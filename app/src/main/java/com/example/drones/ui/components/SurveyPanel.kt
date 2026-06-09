@@ -51,6 +51,7 @@ fun SurveyPanel(
     onNudge: (major: Double, minor: Double) -> Unit,
     onHeight: (Double) -> Unit,
     onLockRing: () -> Unit,
+    onLockAll: () -> Unit,
     onStartOrbit: () -> Unit,
     onAbortOrbit: () -> Unit,
     modifier: Modifier = Modifier
@@ -94,8 +95,11 @@ fun SurveyPanel(
             CapturePhase.EDITING -> {
                 RingEditor(rings, selectedRing, onSelectRing, onNudge, onHeight, onLockRing)
                 val allLocked = rings.isNotEmpty() && rings.all { it.locked }
+                if (!allLocked) {
+                    Chip("LOCK ALL RINGS", Color(0xFF76FF03), onLockAll, Modifier.fillMaxWidth())
+                }
                 Chip(
-                    if (allLocked) "▶ START ORBIT" else "Lock all rings",
+                    if (allLocked) "▶ START ORBIT" else "…lock rings to fly",
                     if (allLocked) Color(0xFF00E676) else Color.DarkGray,
                     onStartOrbit, Modifier.fillMaxWidth()
                 )

@@ -13,7 +13,7 @@ import kotlin.math.sin
  */
 object WaypointBuilder {
 
-    private const val PER_RING = 24
+    private const val PER_RING = 16
 
     fun build(scan: TopScanResult, rings: List<EditableRing>): List<CaptureWaypoint> {
         val out = ArrayList<CaptureWaypoint>()
