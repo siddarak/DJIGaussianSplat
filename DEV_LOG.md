@@ -16,6 +16,17 @@ Live notes on decisions, blockers, and what's queued. New entries on top. Append
 
 ## Decisions
 
+### 2026-06-09 — Orbit = closed-loop waypoint flight; SDK mission research
+Full marker capture workflow was rebuilt (v3.0) into a phase machine: SCAN → AUTO-CENTER → EDIT rings → LOCK → ORBIT. Key findings + decisions since:
+
+- **Root causes fixed:** landing sometimes did nothing because `land()`/`returnToHome()` never released Virtual Stick (DJI refuses auto-land while VS owns the craft) — now released first. Orbit did nothing indoors because the executor used GROUND (GPS/North) frame, which the drone rejects without GPS — switched to **BODY frame** (works on VPS). (v3.0–v3.1)
+- **SDK research (decompiled 5.17 JAR):** every DJI-native autonomous mission is **GPS-only** — POI orbit (`POIMissionManager`), FlyTo, and Waypoint V3 KMZ all take `LocationCoordinate3D` = lat/lon/alt. So there is **no DJI-native indoor autonomous flight**; indoors the only path is Virtual Stick + our own marker positioning. Outdoors we can leverage DJI's native **POI** (`PoiOrbitController`, v3.3) and KMZ waypoints.
+- **Auto-center was the blocker:** the marker offset is in the CAMERA frame; commanding BODY-frame motion needs the camera→body rotation, which is fixed by the gimbal mount but unknown. Fix = **auto-calibration**: two nudges (forward, right) measure how the offset moves → build the exact 2×2 inverse map. No more guessed signs. (v3.2) Plus a manual **USE THIS CENTER** override + divergence bail-out so it can't oscillate forever. (v3.4)
+- **Takeoff stuck on "TAKING OFF…":** SDK accepts the command but the drone may never lift off (blocked / IMU / no GPS). Added an **8 s takeoff watchdog** that clears the stuck state with an error. (v3.4)
+- **Orbit reworked to waypoint-following (v3.5):** the open-loop crab circle never traversed the path. Now the orbit is a closed-loop flight **through computed waypoints** (center = origin), using the **markers as continuous position feedback**: drive the live marker offset to each waypoint's target, map heading-compensated so it stays valid as the drone yaws, always facing center, holding each waypoint's height, gimbal framing the object at each. `WaypointFlightExecutor` + `WaypointBuilder`/`WaypointStore` (DJI-style waypoint model, marker-local JSON, KMZ export via `KmzExporter`).
+- Decisions locked with user: build **Both** (indoor calibrated + outdoor POI/KMZ); waypoints stored marker-local JSON **and** exported to DJI KMZ.
+- ⏳ All flight paths still need cautious on-site verification; calibration sign depends on the gimbal mount (logged as `WP calib dF/dR` for tuning).
+
 ### 2026-06-04 — Marker-anchored path + object config pipeline
 New indoor capture method (replaces chain-survey idea):
 - Climb to top, see all 8 markers in one frame, compute geometric center + marker map (most accurate fix).

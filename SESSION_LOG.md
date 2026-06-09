@@ -91,6 +91,19 @@ Format: `[date] vX.Y-tag — what / why / status`. Status: ✅ confirmed / ⏳ u
   - ViewModel: `addCurrentWaypoint()`, `resetSurvey()`, `finishSurvey()` saves JSON.
   - ⏳ untested in flight; math approximation may need tuning per real measurements.
 
+### 2026-06-05 → 06-09 — Top-scan, capture workflow, waypoint-following orbit
+- **v2.6-topscan** — discarded chain co-observation. `TopScanLocalizer` builds the ground map from all markers in one frame; `MarkerLayout` site config (roles + optional measured positions + table height). `SurveyController` deleted.
+- **v2.6.1-marker-highlight** — light-blue translucent fill on each identified marker (visual "seen" cue).
+- **v2.6.2-live-center** — geometric center computed LIVE (no separate tap); LOCK/UNLOCK to freeze.
+- **v2.7-marker-orbit** — first LOCK → START ORBIT wiring (reused GPS executor); UI: left rail visible, video inset, mandatory confirm dialog.
+- **v2.8-path-preview** — AR ring preview drawn on the live video via a marker ground-homography (`PathProjector`), tracks live.
+- **v3.0-capture-workflow** — full rebuild into a phase machine (`CapturePhase`): SCAN → CENTER_READY → CENTERING → EDITING → READY → ORBITING. New `AutoCenterController` + `MarkerOrbitExecutor` (BODY frame, no GPS), per-ring ellipse editor (`EditableRing`), `land()`/`returnToHome()` release Virtual Stick first.
+- **v3.1-orbit-geometry** — orbit flies out to radius + faces center (closed-loop on markers) before circling; per-ring colours; heavy diagnostics.
+- **v3.2-autocenter-calib** — two-nudge **camera→body calibration** so AUTO-CENTER converges (no guessed signs). `CaptureWaypoint`/`WaypointPath`/`WaypointStore` + `WaypointBuilder` (marker-local JSON, DJI-style).
+- **v3.3-poi-kmz** — `PoiOrbitController` (DJI-native POI orbit, outdoor GPS) + `KmzExporter` (experimental DJI WPMZ .kmz from marker-local waypoints).
+- **v3.4-center-confirm-takeoff** — manual **USE THIS CENTER** override + divergence bail-out (stop oscillation); **8 s takeoff watchdog** clears stuck "TAKING OFF…".
+- **v3.5-waypoint-flight** — orbit reworked to **closed-loop flight through waypoints** (`WaypointFlightExecutor`): markers as continuous position feedback, heading-compensated map, faces center, per-waypoint height + gimbal framing; **LOCK ALL RINGS** button. ⏳ all flight paths need cautious on-site test.
+
 ---
 
 ## Open / pending
