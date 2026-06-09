@@ -60,6 +60,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var autoCenter: com.example.drones.orbit.AutoCenterController? = null
     private var markerOrbit: com.example.drones.orbit.MarkerOrbitExecutor? = null
     private var waypointFlight: com.example.drones.orbit.WaypointFlightExecutor? = null
+    private var gimbalOrbit: com.example.drones.orbit.GimbalCenterOrbitExecutor? = null
     private var detectionStatusJob: Job? = null
 
     init {
@@ -242,6 +243,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         autoCenter?.abort(); autoCenter = null
         markerOrbit?.abort(); markerOrbit = null
         waypointFlight?.abort(); waypointFlight = null
+        gimbalOrbit?.abort(); gimbalOrbit = null
         orbitExecutor?.abort(); orbitExecutor = null
         visualOrbit?.abort(); visualOrbit = null
         try { dji.v5.manager.aircraft.virtualstick.VirtualStickManager.getInstance().disableVirtualStick(null) }
@@ -674,6 +676,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return Pair(scan.centerXM, scan.centerYM)
     }
 
+    /** Average marker position in the CAMERA frame (x right, y down, z forward). */
+    private fun centerVecCam(): Triple<Double, Double, Double>? {
+        val obs = _droneState.value.markersDetected
+        if (obs.isEmpty()) return null
+        var x = 0.0; var y = 0.0; var z = 0.0
+        obs.forEach { x += it.tvec[0]; y += it.tvec[1]; z += it.tvec[2] }
+        val n = obs.size.toDouble()
+        return Triple(x / n, y / n, z / n)
+    }
+
     // --- Auto-center: drone flies itself over the computed center ---
     fun startAutoCenter() {
         if (!_droneState.value.isFlying) {
@@ -777,23 +789,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (rings.isEmpty()) return
 
         val scan = _droneState.value.topScan ?: return
-        // Build the waypoints (center = origin), persist, and fly THROUGH them closed-loop.
+        // Persist the planned path (marker-local waypoints) for the record.
         val wps = com.example.drones.waypoints.WaypointBuilder.build(scan, rings)
-        val path = com.example.drones.waypoints.WaypointPath(
-            id = com.example.drones.waypoints.WaypointStore.newId(),
-            createdUtc = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US)
-                .format(java.util.Date()),
-            centerXM = scan.centerXM, centerYM = scan.centerYM, waypoints = wps
-        )
-        com.example.drones.waypoints.WaypointStore.save(getApplication(), path)
+        com.example.drones.waypoints.WaypointStore.save(getApplication(),
+            com.example.drones.waypoints.WaypointPath(
+                id = com.example.drones.waypoints.WaypointStore.newId(),
+                createdUtc = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US)
+                    .format(java.util.Date()),
+                centerXM = scan.centerXM, centerYM = scan.centerYM, waypoints = wps
+            ))
 
+        val objectCenterZ = (markerLayout?.tableHeightM ?: 0.0) + surveyObjectHeightM / 2.0
         _droneState.update { it.copy(capturePhase = CapturePhase.ORBITING) }
-        FileLogger.write("WaypointFlight start: ${wps.size} waypoints across ${rings.size} rings")
-        waypointFlight?.abort()
-        waypointFlight = com.example.drones.orbit.WaypointFlightExecutor(
-            waypoints = wps,
-            getCenterOffsetM = { centerOffset() },
-            getHeadingDeg = { _droneState.value.heading },
+        FileLogger.write("GimbalOrbit start: ${rings.size} rings, centerZ=$objectCenterZ")
+        gimbalOrbit?.abort()
+        gimbalOrbit = com.example.drones.orbit.GimbalCenterOrbitExecutor(
+            rings = rings,
+            objectCenterZ = objectCenterZ,
+            getCenterVecCam = { centerVecCam() },
             getDroneAlt = { _droneState.value.altitude },
             isFlying = { _droneState.value.isFlying },
             onState = { orbitState ->
@@ -802,15 +815,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (orbitState == OrbitState.Done || orbitState == OrbitState.Aborted ||
                     orbitState is OrbitState.Error) {
                     stopRecording()
-                    waypointFlight = null
+                    gimbalOrbit = null
                     _droneState.update { it.copy(capturePhase = CapturePhase.EDITING) }
                 }
             }
         )
-        waypointFlight?.start()
+        gimbalOrbit?.start()
     }
 
     fun abortMarkerOrbit() {
+        gimbalOrbit?.abort(); gimbalOrbit = null
         waypointFlight?.abort(); waypointFlight = null
         markerOrbit?.abort(); markerOrbit = null
         _droneState.update { it.copy(capturePhase = CapturePhase.EDITING) }
