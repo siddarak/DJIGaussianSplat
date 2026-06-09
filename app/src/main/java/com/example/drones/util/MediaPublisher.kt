@@ -43,19 +43,23 @@ object MediaPublisher {
         }
     }
 
-    /** Copy log to public Documents/Drones/. */
+    /** Copy log to public Documents/Drones/ with a timestamped filename. */
     fun publishLog(context: Context, src: File): String? {
         if (!src.exists() || src.length() == 0L) return null
+        val stamp = java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", java.util.Locale.US)
+            .format(java.util.Date())
+        val name = "drone-log-$stamp.txt"
         return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 publishViaMediaStore(
                     context, src,
                     MediaStore.Files.getContentUri("external"),
                     "text/plain",
-                    "Documents/Drones"
+                    "Documents/Drones",
+                    name
                 )
             } else {
-                publishLegacy(src, Environment.DIRECTORY_DOCUMENTS, "Drones")
+                publishLegacy(src, Environment.DIRECTORY_DOCUMENTS, "Drones", name)
             }
         } catch (e: Exception) {
             Log.e(TAG, "publishLog fail: ${e.message}", e)
@@ -68,10 +72,11 @@ object MediaPublisher {
         src: File,
         collection: android.net.Uri,
         mime: String,
-        relPath: String
+        relPath: String,
+        displayName: String = src.name
     ): String? {
         val values = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, src.name)
+            put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
             put(MediaStore.MediaColumns.MIME_TYPE, mime)
             put(MediaStore.MediaColumns.RELATIVE_PATH, relPath)
         }
@@ -79,14 +84,14 @@ object MediaPublisher {
         context.contentResolver.openOutputStream(uri)?.use { out ->
             src.inputStream().use { it.copyTo(out) }
         }
-        Log.i(TAG, "Published ${src.name} → $relPath/")
+        Log.i(TAG, "Published $displayName → $relPath/")
         return uri.toString()
     }
 
-    private fun publishLegacy(src: File, dirEnv: String, sub: String): String? {
+    private fun publishLegacy(src: File, dirEnv: String, sub: String, displayName: String = src.name): String? {
         val pubDir = File(Environment.getExternalStoragePublicDirectory(dirEnv), sub)
         if (!pubDir.exists()) pubDir.mkdirs()
-        val dst = File(pubDir, src.name)
+        val dst = File(pubDir, displayName)
         src.copyTo(dst, overwrite = true)
         Log.i(TAG, "Published legacy → ${dst.absolutePath}")
         return dst.absolutePath
