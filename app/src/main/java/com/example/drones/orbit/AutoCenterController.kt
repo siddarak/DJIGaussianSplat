@@ -43,13 +43,14 @@ class AutoCenterController(
         private const val TICK_MS = 100L
         private const val NUDGE_VEL = 0.2          // m/s calibration nudge
         private const val NUDGE_TICKS = 8          // ~0.8s ≈ 0.16 m
-        private const val GAIN = 0.6               // m/s per meter of remaining offset
-        private const val MAX_VEL = 0.4
-        private const val TOLERANCE_M = 0.15
-        private const val SETTLE_TICKS = 8
+        private const val GAIN = 0.35              // gentler — avoids overshoot/toggling
+        private const val MAX_VEL = 0.30
+        private const val TOLERANCE_M = 0.20       // accept a bit looser to settle
+        private const val SETTLE_TICKS = 6
         private const val TIMEOUT_MS = 15000L
         private const val LOST_TIMEOUT_MS = 1500L
         private const val MIN_NUDGE_RESPONSE = 0.04  // m; below this calibration is unreliable
+        private const val DIVERGE_TICKS = 25         // if not improving this long, stop + ask user
     }
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -115,10 +116,12 @@ class AutoCenterController(
         val startMs = System.currentTimeMillis()
         var lastSeen = System.currentTimeMillis()
         var settle = 0
+        var bestDist = Double.MAX_VALUE
+        var noImprove = 0
         val inv = mInv ?: return
         while (alive()) {
             val now = System.currentTimeMillis()
-            if (now - startMs > TIMEOUT_MS) { onState("center timeout"); break }
+            if (now - startMs > TIMEOUT_MS) { sendStick(0.0, 0.0); onState("center timeout — confirm manually"); break }
             val off = getOffsetM()
             if (off == null) {
                 if (now - lastSeen > LOST_TIMEOUT_MS) { sendStick(0.0, 0.0); onState("markers lost"); break }
@@ -126,6 +129,14 @@ class AutoCenterController(
             }
             lastSeen = now
             val dist = hypot(off.first, off.second)
+            // divergence / oscillation guard: if it stops improving, hold and ask the user
+            if (dist < bestDist - 0.02) { bestDist = dist; noImprove = 0 } else noImprove++
+            if (noImprove > DIVERGE_TICKS) {
+                sendStick(0.0, 0.0)
+                FileLogger.write("AutoCenter not converging (best=%.2f) — hold, confirm manually".format(bestDist))
+                onState("not converging — use manual confirm")
+                break
+            }
             if (dist <= TOLERANCE_M) {
                 settle++; sendStick(0.0, 0.0)
                 if (settle >= SETTLE_TICKS) { FileLogger.write("Centered (%.2fm)".format(dist)); sendStick(0.0,0.0); onState("centered"); onSettled(); return }

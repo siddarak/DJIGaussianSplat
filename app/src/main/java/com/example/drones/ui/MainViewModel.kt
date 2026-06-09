@@ -204,6 +204,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // --- Flight controls ---
 
+    private var takeoffWatchdog: Job? = null
+
     fun takeOff() {
         _droneState.update { it.copy(isTakingOff = true, flightActionError = null) }
         FlightController.takeOff { success, error ->
@@ -211,7 +213,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 isTakingOff = if (!success) false else it.isTakingOff,
                 flightActionError = if (!success) "Takeoff failed: $error" else null
             )}
-            if (!success) scheduleErrorClear()
+            if (!success) { takeoffWatchdog?.cancel(); scheduleErrorClear() }
+        }
+        // Watchdog: the SDK may ACCEPT the command but the drone never lifts off
+        // (blocked, IMU/compass not ready, no GPS lock outdoors, low battery).
+        // If we're not airborne within the timeout, clear the stuck "TAKING OFF…".
+        takeoffWatchdog?.cancel()
+        takeoffWatchdog = viewModelScope.launch {
+            delay(8000)
+            if (_droneState.value.isTakingOff && !_droneState.value.isFlying) {
+                _droneState.update { it.copy(
+                    isTakingOff = false,
+                    flightActionError = "Drone did not take off — check status/area, then retry"
+                )}
+                FileLogger.write("Takeoff watchdog: not airborne after 8s — cleared")
+                scheduleErrorClear()
+            }
         }
     }
 
@@ -669,20 +686,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         autoCenter?.abort()
         autoCenter = com.example.drones.orbit.AutoCenterController(
             getOffsetM = { centerOffset() },
-            onSettled = {
-                viewModelScope.launch {
-                    val scan = _droneState.value.topScan
-                    val rings = if (scan != null)
-                        com.example.drones.orbit.MarkerPathPlanner.planEditableRings(
-                            scan, surveyObjectHeightM, markerLayout?.tableHeightM ?: 0.0)
-                    else emptyList()
-                    _droneState.update { it.copy(
-                        capturePhase = CapturePhase.EDITING,
-                        editableRings = rings,
-                        selectedRingIndex = 0
-                    )}
-                }
-            },
+            onSettled = { viewModelScope.launch { enterEditing() } },
             onState = { msg -> FileLogger.write("AutoCenter: $msg") }
         )
         autoCenter?.start()
@@ -691,6 +695,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun abortAutoCenter() {
         autoCenter?.abort(); autoCenter = null
         _droneState.update { it.copy(capturePhase = CapturePhase.CENTER_READY) }
+    }
+
+    /**
+     * Manual override — stop the auto-center motion and accept the CURRENT
+     * position as the center. Lets the user end any oscillation themselves.
+     * Usable from CENTER_READY (skip flying) or CENTERING (stop + accept).
+     */
+    fun confirmCenterManually() {
+        autoCenter?.abort(); autoCenter = null
+        if (_droneState.value.topScan == null) {
+            _droneState.update { it.copy(flightActionError = "No center detected") }
+            scheduleErrorClear(); return
+        }
+        FileLogger.write("Center confirmed manually")
+        enterEditing()
+    }
+
+    /** Seed editable rings from the current scan and move to EDITING. */
+    private fun enterEditing() {
+        val scan = _droneState.value.topScan ?: return
+        val rings = com.example.drones.orbit.MarkerPathPlanner.planEditableRings(
+            scan, surveyObjectHeightM, markerLayout?.tableHeightM ?: 0.0)
+        _droneState.update { it.copy(
+            capturePhase = CapturePhase.EDITING,
+            editableRings = rings,
+            selectedRingIndex = 0
+        )}
     }
 
     // --- Per-ring editing ---

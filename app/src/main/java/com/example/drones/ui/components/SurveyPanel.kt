@@ -46,6 +46,7 @@ fun SurveyPanel(
     orbitStatus: String,
     onAutoCenter: () -> Unit,
     onAbortCenter: () -> Unit,
+    onConfirmCenter: () -> Unit,
     onSelectRing: (Int) -> Unit,
     onNudge: (major: Double, minor: Double) -> Unit,
     onHeight: (Double) -> Unit,
@@ -79,11 +80,14 @@ fun SurveyPanel(
                     fontSize = 10.sp, fontFamily = FontFamily.Monospace
                 )
                 Chip("AUTO-CENTER", if (markers >= 4) Color(0xFF00E676) else Color.DarkGray, onAutoCenter, Modifier.fillMaxWidth())
+                // Skip auto-fly: accept the current position as center and edit rings.
+                Chip("USE THIS CENTER", if (markers >= 1) Color(0xFFFFD600) else Color.DarkGray, onConfirmCenter, Modifier.fillMaxWidth())
             }
 
             CapturePhase.CENTERING -> {
                 Text("Flying to center…", color = Color(0xFF80DEEA), fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                Text("Hand on controller.", color = Color.White.copy(alpha = 0.7f), fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                Text("If it keeps toggling, tap USE CURRENT.", color = Color.White.copy(alpha = 0.7f), fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                Chip("✓ USE CURRENT CENTER", Color(0xFFFFD600), onConfirmCenter, Modifier.fillMaxWidth())
                 Chip("ABORT", Color(0xFFFF5252), onAbortCenter, Modifier.fillMaxWidth())
             }
 

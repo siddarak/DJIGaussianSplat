@@ -107,6 +107,7 @@ fun FlightScreen(viewModel: MainViewModel) {
                         orbitStatus      = orbitStatusText(state.orbitState),
                         onAutoCenter     = { viewModel.startAutoCenter() },
                         onAbortCenter    = { viewModel.abortAutoCenter() },
+                        onConfirmCenter  = { viewModel.confirmCenterManually() },
                         onSelectRing     = { viewModel.selectRing(it) },
                         onNudge          = { maj, min -> viewModel.nudgeRing(state.selectedRingIndex, maj, min) },
                         onHeight         = { h -> viewModel.updateRingHeight(state.selectedRingIndex, h) },
