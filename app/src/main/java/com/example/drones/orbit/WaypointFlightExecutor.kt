@@ -170,21 +170,24 @@ class WaypointFlightExecutor(
             val cf = m.first*cos(dRad) + m.second*sin(dRad)
             val cr = -m.first*sin(dRad) + m.second*cos(dRad)
             val yawRate = (-YAW_GAIN * cr).coerceIn(-MAX_YAW, MAX_YAW)
-            send(
-                forward = (POS_GAIN*f).coerceIn(-MAX_VEL, MAX_VEL),
-                right   = (POS_GAIN*r).coerceIn(-MAX_VEL, MAX_VEL),
-                yawRate = yawRate,
-                vertical = heightHold(wp.zM)
+            val vf = (POS_GAIN*f).coerceIn(-MAX_VEL, MAX_VEL)
+            val vr = (POS_GAIN*r).coerceIn(-MAX_VEL, MAX_VEL)
+            send(forward = vf, right = vr, yawRate = yawRate, vertical = heightHold(wp.zM))
+            // periodic diagnostics (~1.2s) so the log shows WHY a waypoint stalls
+            if (t % 12 == 0) FileLogger.write(
+                "WP${wp.seq} dist=%.2f off=(%.2f,%.2f) tgt=(%.2f,%.2f) vf=%.2f vr=%.2f yaw=%.0f alt=%.2f hdg=%.0f"
+                    .format(dist, m.first, m.second, tx, ty, vf, vr, yawRate, getDroneAlt(), getHeadingDeg())
             )
             if (dist < ARRIVE_TOL) { settle++; if (settle >= ARRIVE_SETTLE) break } else settle = 0
             delay(TICK_MS); t++
         }
+        if (t >= WP_TIMEOUT_TICKS) FileLogger.write("WP${wp.seq} TIMEOUT (never within ${ARRIVE_TOL}m)")
         // arrived → frame the object at this waypoint's gimbal pitch briefly
         GimbalController.setPitch(wp.gimbalPitchDeg)
         var h = 0
         while (alive() && h < 12) { send(0.0, 0.0, 0.0, heightHold(wp.zM)); delay(TICK_MS); h++ }
         GimbalController.setPitch(-90.0)   // back down for marker positioning to next wp
-        FileLogger.write("WP${wp.seq} reached")
+        FileLogger.write("WP${wp.seq} done (t=$t ticks)")
     }
 
     private fun heightHold(targetZ: Double) =
